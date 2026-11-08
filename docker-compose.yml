@@ -1,0 +1,62 @@
+name: ajsa
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ajsa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-ajsa}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build: .
+    profiles: ['tools']
+    command: npm run migrate
+    environment: &app-env
+      DATABASE_URL: postgres://${POSTGRES_USER:-ajsa}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ajsa}
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      MASTER_KEY: ${MASTER_KEY:?set MASTER_KEY in .env}
+      STORAGE_DIR: /data/storage
+      NODE_ENV: production
+    volumes:
+      - app-storage:/data/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: .
+    restart: unless-stopped
+    command: npm start
+    environment: *app-env
+    ports:
+      - '127.0.0.1:3000:3000'
+    volumes:
+      - app-storage:/data/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: npx tsx src/worker/main.ts
+    environment: *app-env
+    volumes:
+      - app-storage:/data/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  app-storage:
