@@ -5,8 +5,8 @@ in [`requirement/`](./requirement) and is treated as **read-only source of truth
 implementation decisions and their status are tracked in
 [`docs/decisions.md`](./docs/decisions.md).
 
-Current implementation: **Phase 0–1** (private foundation) — see
-[`docs/implementation-status.md`](./docs/implementation-status.md).
+Current implementation: **Phase 0–2** (private foundation + profile/manual job
+search) — see [`docs/implementation-status.md`](./docs/implementation-status.md).
 
 ## What works today
 
@@ -26,11 +26,17 @@ Current implementation: **Phase 0–1** (private foundation) — see
 - Privacy exports (ZIP + manifest, 24 h default TTL), document purge with fact
   retraction, workspace reset that revokes exports via privacy generation,
   disables browser submission and opens a global recovery hold.
-- Minimal accessible dashboard + login page and health endpoints.
+- Candidate profile with optimistic versioning and versioned facts
+  (`unverified`, `verified`, `retracted`), including private source documents.
+- Manual job import (`owner_paste` provenance), canonical URL validation without
+  fetching, stable listing identity, revision history, deduplication suggestions,
+  bookmark/archive curation and local text filters.
+- Minimal accessible dashboard + login page, profile/fact editor, job import and
+  filtering UI, and health endpoints.
 
-Not built yet: job import/search UI, scoring, document generation, portal
-automation, approvals, quota enforcement, schedules UI, notifications, AI
-providers. See the phase table in `docs/implementation-status.md`.
+Not built yet: scoring/ranking, document generation, portal automation, approvals,
+quota enforcement, schedules UI, notifications, AI providers. See the phase table
+in `docs/implementation-status.md`.
 
 ## Stack
 
@@ -109,6 +115,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | Auth | `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/session` |
 | Documents | `GET/POST /api/v1/documents`, `GET /api/v1/documents/{id}/download`, `DELETE /api/v1/documents/{id}` |
 | Privacy | `POST /api/v1/privacy/exports`, `POST /api/v1/privacy/deletions`, `GET /api/v1/privacy/requests/{id}`, `GET /api/v1/privacy/requests/{id}/download` |
+| Profile | `GET/PATCH /api/v1/profile`, `GET/POST /api/v1/profile/facts`, `PATCH /api/v1/profile/facts/{id}` |
+| Jobs | `GET /api/v1/jobs`, `GET /api/v1/jobs/{id}`, `PATCH /api/v1/jobs/{id}`, `POST /api/v1/jobs/imports` |
+| Duplicates | `GET /api/v1/duplicate-suggestions`, `POST /api/v1/duplicate-suggestions/{id}/resolve` |
 | Tasks | `GET /api/v1/tasks/{id}`, `POST /api/v1/tasks/{id}/cancel` |
 
 All authenticated mutations require `x-csrf-token` (from login/session response)

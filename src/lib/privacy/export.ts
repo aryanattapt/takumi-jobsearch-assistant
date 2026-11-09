@@ -111,6 +111,7 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
     );
     const jobs = await query(
       `SELECT j.id, j.title_normalized, j.company_normalized, j.location, j.status,
+              j.bookmarked, j.ignored_reason, j.version,
               l.id AS listing_id, l.external_id, l.canonical_url, l.retrieved_at,
               r.title, r.company, r.description, r.provenance
          FROM jobs j

@@ -3,7 +3,7 @@
 Tracks execution of `requirement/08-IPD-Implementation-Plan.md`. The requirement
 package remains unchanged and authoritative.
 
-Last updated: 2026-11-08.
+Last updated: 2026-11-09.
 
 ## Phase 0 — Discovery & integration
 
@@ -34,6 +34,36 @@ Verification (local, 2026-11-08):
   export request, worker export, ZIP download, document purge, workspace reset,
   export revocation (410), login survives reset
 
+## Phase 2 — Profile & search P0 (E04–E06)
+
+| Epic | Status | What exists |
+|---|---|---|
+| E04 Profile | Done (manual entry) | Lazy profile row per owner, optimistic `version`, timezone in `users`, versioned facts with `unverified/verified/retracted`, owner-confirmed verification, source document linkage, correction creates a new fact version and invalidates prior verification. |
+| E05 Sources | Done for manual path | `manual` source, `POST /jobs/imports` with required `Idempotency-Key`, provenance `owner_paste`, URL validation **without fetching**, stable external identity, revision history. Live adapters remain disabled (DEC-04/DEC-16). |
+| E06 Job model | Done | Canonical URL normalization, normalized company/title/location, cross-source duplicate suggestions with manual merge/reject, merge conflict when both jobs have applications, bookmark/archive/ignore-reason curation with `version`, local text filter. |
+| UI | Done | Dashboard sections for profile, facts, manual import, duplicate review, job filter/bookmark/archive. |
+
+Verification (local, 2026-11-09):
+
+- `npm run typecheck` — pass
+- `npm run lint` — pass
+- `npm test` — 14 files / 80 tests pass, including the new profile/job integration
+  suites against a real embedded PostgreSQL 18 cluster
+- `npm run build` — not re-run on this checkout (exFAT `readlink` limitation,
+  see `docs/decisions.md`); run on an NTFS copy before release
+
+Requirement traceability (Phase 2):
+
+| Requirement/UAT | Coverage |
+|---|---|
+| AC-02 / UAT-03 | `tests/integration/profile.test.ts` (profile version conflict, stale update rejected) |
+| AC-02 / UAT-04 | Versioned fact correction, unverified after edit, verify/retract, source document retained |
+| AC-03 / UAT-06 | Manual import stores provenance, optional validated URL, no server-side fetch; adapter partial-success path remains Phase 5 |
+| AC-04 / UAT-07 | Same source + external identity does not duplicate a listing; re-ingest updates retrieval data |
+| AC-04 / UAT-08 | Similar title/company across sources only creates a review suggestion, never an automatic merge |
+| AC-04 / UAT-09 | Merge returns `MERGE_CONFLICT` when both jobs already have applications |
+| BR-04 / BR-05 | Normalization is pure and unit tested; list filters are explicit (`active`, `archived`, `all`) and `unknown` is not invented |
+
 ## Requirement traceability (foundation)
 
 These scenarios now have executable coverage; this is **not** a claim that UAT is
@@ -53,7 +83,6 @@ signed off by the owner.
 
 ## Not started yet
 
-- Phase 2: profile/facts API+UI, manual job import, canonicalization/deduplication, filter UI.
 - Phase 3: AI provider adapter, scoring/rubric, CV/cover generation, PDF checks, screening Q&A, tracker.
 - Phase 4: portal login/session, preflight snapshots, approvals, quota reservations, dispatch intent, evidence/reconciliation, recovery holds API.
 - Phase 5/6: additional adapters, schedules UI, notifications, Gmail/Notion.
@@ -64,6 +93,12 @@ signed off by the owner.
   requirement study (worker always receives `owner_id`, but the tables do not
   enforce it structurally beyond FK on `tasks`).
 - AI budget ledger is not modelled; budget remains a future preference.
+- Duplicate detection only compares normalized company + title tokens. It is
+  intentionally conservative and only proposes cross-source pairs; Phase 3
+  ranking may add a stronger fingerprint.
+- `saved_searches` exists but there is no saved-search UI or schedule wiring yet.
+- Profile facts accept free-form JSON values; type-specific schemas can be added
+  when extraction templates are defined.
 - No owner password-recovery flow (CLI only), as specified for the pilot but
   operationally incomplete.
 - Cross-owner tests use a directly inserted second user; production provisioning

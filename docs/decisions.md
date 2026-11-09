@@ -14,7 +14,7 @@ Status legend: **assumed** = used because the plan needs a concrete default;
 | DEC-01 | assumed | Single owner per installation, `owner_id` everywhere | `installation_owner` singleton + CLI provisioning |
 | DEC-02 | assumed (provisional) | Next.js 16 + React 19 + TypeScript, Node worker, PostgreSQL, Docker Compose | Webpack bundler is pinned in scripts because Turbopack cannot create junctions on exFAT |
 | DEC-03 | assumed (provisional) | Implementation lives in this repository, alongside `requirement/` | Repository visibility/license still unconfirmed |
-| DEC-04 | assumed for P0 | No live portal adapter yet; manual import path will be built in Phase 2 | Live adapters keep `enabled = false` |
+| DEC-04 | assumed for P0 | No live portal adapter yet; manual import path is implemented (Phase 2) | Live adapters keep `enabled = false`; `manual` source is the only enabled source |
 | DEC-05 | pending | Not implemented yet | Approval expiry constant will live in config |
 | DEC-06 | pending | Not implemented yet | Rubric version will be stored with each evaluation |
 | DEC-07 | assumed | P0 manual submission, browser automation disabled, schedules disabled | `submission_controls.browser_enabled = false` by default |

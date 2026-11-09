@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useState, type FormEvent } from 'react';
+import { useCallback, useState, type FormEvent, type ReactNode } from 'react';
 
 export interface DashboardDocument {
   id: string;
@@ -37,6 +37,7 @@ export interface DashboardProps {
   tasks: DashboardTask[];
   browserEnabled: boolean;
   activeHolds: number;
+  children?: ReactNode;
 }
 
 interface ApiEnvelope<T> {
@@ -229,6 +230,8 @@ export default function Dashboard(props: DashboardProps) {
           <span className="badge warn">Penahanan recovery: {props.activeHolds}</span>
         </div>
       </section>
+
+      {props.children}
 
       <section className="panel" aria-labelledby="docs-title">
         <h2 id="docs-title">Dokumen privat</h2>

@@ -4,8 +4,20 @@ import Dashboard, {
   type DashboardPrivacyRequest,
   type DashboardTask,
 } from '@/components/dashboard';
+import JobSearch from '@/components/job-search';
+import {
+  duplicateSuggestionDto,
+  factDto,
+  jobListDto,
+  profileDto,
+} from '@/lib/api/dto';
 import { getServerSession } from '@/lib/auth/server-session';
 import { query, queryOne } from '@/lib/db/pool';
+import {
+  listDuplicateSuggestions,
+  listJobs,
+} from '@/lib/jobs/service';
+import { getProfile, listFacts } from '@/lib/profile/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,7 +52,17 @@ export default async function Page() {
   const session = await getServerSession();
   if (!session) redirect('/login');
 
-  const [documents, privacyRequests, tasks, controls, holds] = await Promise.all([
+  const [
+    documents,
+    privacyRequests,
+    tasks,
+    controls,
+    holds,
+    profile,
+    facts,
+    jobs,
+    duplicates,
+  ] = await Promise.all([
     query<DocumentQueryRow>(
       `SELECT id, kind, original_name, media_type, size_bytes, status, version, created_at
          FROM documents
@@ -75,6 +97,10 @@ export default async function Page() {
         WHERE owner_id = $1 AND status = 'active'`,
       [session.ownerId],
     ),
+    getProfile(session.ownerId),
+    listFacts(session.ownerId),
+    listJobs(session.ownerId, { status: 'active', limit: 50 }),
+    listDuplicateSuggestions(session.ownerId),
   ]);
 
   const documentsDto: DashboardDocument[] = documents.map((row) => ({
@@ -120,6 +146,20 @@ export default async function Page() {
       tasks={tasksDto}
       browserEnabled={controls?.browser_enabled ?? false}
       activeHolds={holds?.count ?? 0}
-    />
+    >
+      <JobSearch
+        csrfToken={session.csrfToken}
+        profile={profileDto(profile)}
+        facts={facts.map(factDto)}
+        jobs={jobs.map(jobListDto)}
+        duplicates={duplicates.map(duplicateSuggestionDto)}
+        documents={documentsDto.map((document) => ({
+          id: document.id,
+          originalName: document.originalName,
+          kind: document.kind,
+          status: document.status,
+        }))}
+      />
+    </Dashboard>
   );
 }
