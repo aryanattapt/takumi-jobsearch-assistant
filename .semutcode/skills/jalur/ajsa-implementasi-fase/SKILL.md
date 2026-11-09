@@ -36,9 +36,11 @@ test terhadap PostgreSQL asli. Tidak mencakup pemasangan environment Windows
 
 3. **Tambah migration bernomor.** Buat `db/migrations/000N_<domain>.sql` dengan
    nomor berikutnya. Jangan pernah mengedit migration yang sudah diterapkan:
-   `runMigrations` memeriksa checksum dan akan menolak. Setiap tabel yang
-   menyimpan data owner wajib punya `owner_id` + FK ke `users`; kolom mutable
-   yang dipakai UI sebaiknya punya `version`.
+   `runMigrations` memeriksa checksum dan akan menolak. Periksa migration lama
+   dulu: tabel domain sering sudah ada (mis. applications/attempts/events di
+   `0004_applications.sql`), jadi tambah hanya kolom yang benar-benar kurang.
+   Setiap tabel yang menyimpan data owner wajib punya `owner_id` + FK ke
+   `users`; kolom mutable yang dipakai UI sebaiknya punya `version`.
 
 4. **Buat pure logic terpisah.** Normalisasi/aturan identitas masuk ke
    `src/lib/<domain>/normalize.ts` agar bisa diuji tanpa database. Contoh yang
@@ -53,13 +55,19 @@ test terhadap PostgreSQL asli. Tidak mencakup pemasangan environment Windows
    - resource orang lain → `apiErrors.notFound()` (jangan bocorkan keberadaan);
    - aksi penting dicatat dengan `recordAudit(client, { ... })`;
    - perintah async/manual memakai `executeIdempotent` di route, bukan di service.
+   Untuk perintah terminal (mis. catat kirim manual): kunci parent `FOR UPDATE`,
+   validasi state asal, cek target lock dan attempt `submit_unknown`, lalu tulis
+   attempt + event + audit dalam satu transaksi. Pola lengkap ada di
+   `references/manual-command-tracker.md`.
    Untuk query daftar + detail, buat helper terpisah (`listX`, `getX`,
    `getXListRow`) daripada memfilter hasil `listX` di memori.
 
 6. **Tambahkan DTO di `src/lib/api/dto.ts`.** Ubah snake_case → camelCase, `Date`
    → `toISOString()`. Kolom PostgreSQL `numeric` kembali sebagai string, jadi
-   konversi eksplisit (`Number(row.confidence)`). Jangan pernah mengembalikan
-   row mentah yang memuat `object_key`, hash, atau secret.
+   konversi eksplisit (`Number(row.confidence)`). `bigserial` (mis. ID event)
+   sudah diparse menjadi `number` oleh `types.setTypeParser(20, ...)` di
+   `src/lib/db/pool.ts`; tipenya `number`, bukan string. Jangan pernah
+   mengembalikan row mentah yang memuat `object_key`, hash, atau secret.
 
 7. **Buat route handler di `src/app/api/v1/<domain>/`.**
    - `export const runtime = 'nodejs'` untuk route yang memakai `pg`;
@@ -79,6 +87,8 @@ test terhadap PostgreSQL asli. Tidak mencakup pemasangan environment Windows
    `src/app/page.tsx` adalah server component dan `Dashboard` adalah client
    component. Ambil data lewat service + mapper DTO, lalu render komponen client
    baru sebagai children: `<Dashboard ...><FiturBaru ... /></Dashboard>`.
+   Untuk beberapa section sekaligus, bungkus fragment:
+   `<Dashboard ...><><FiturA /><FiturB /></></Dashboard>`.
    Di komponen client (`'use client'`):
    - salin pola `callApi` + state `busy/message/error` dari `dashboard.tsx`;
    - kirim `x-csrf-token` dan `crypto.randomUUID()` sebagai `Idempotency-Key`;
@@ -106,12 +116,14 @@ test terhadap PostgreSQL asli. Tidak mencakup pemasangan environment Windows
     `npm run build` di checkout exFAT akan gagal `EISDIR/readlink`; itu masalah
     filesystem, bukan kode. Verifikasi build di salinan NTFS memakai
     `scripts/build-on-ntfs.sh` dari skill `nextjs-postgres-windows-tanpa-docker`,
-    atau catat bahwa build belum dijalankan.
+    atau catat bahwa build belum dijalankan. Catat jumlah file/test persis dari
+    output `npm test`, bukan perkiraan.
 
 11. **Perbarui dokumentasi.** Ubah `README.md` (fitur + tabel endpoint),
     `docs/implementation-status.md` (tabel fase, traceability AC/UAT, jumlah test,
-    catatan build), dan `docs/decisions.md` bila ada asumsi baru. Jangan menulis
-    tanggal/nomor issue ke skill, tetapi tanggal verifikasi di status dokumen boleh.
+    catatan build), dan `docs/decisions.md` bila ada asumsi baru. Jumlah test di
+    dokumen harus sama dengan output `npm test`. Jangan menulis tanggal/nomor
+    issue ke skill, tetapi tanggal verifikasi di status dokumen boleh.
 
 ## Pitfalls
 
@@ -128,6 +140,15 @@ test terhadap PostgreSQL asli. Tidak mencakup pemasangan environment Windows
   query `getXListRow(ownerId, id)` yang langsung memakai `WHERE id = $2`.
 - Jangan lupa menambah kolom baru ke query export di
   `src/lib/privacy/export.ts`; kalau tidak, data baru hilang dari ZIP ekspor.
+  Untuk tracker, tambahkan juga tabel anak (`application_attempts`) ke
+  `applications.json`, bukan hanya kolom di tabel induk.
+- Jangan memanggil helper/DTO yang belum ada (mis. `getXListRowDto`); baca dulu
+  daftar export modul service/DTO, lalu pakai nama yang benar-benar ada.
+- Jangan mengandalkan status application saja untuk mencegah kirim ganda: query
+  juga `target_key` dan state `submit_unknown` di transaksi yang sama, karena
+  attempt lama bisa ada tanpa status application yang konsisten.
+- Jangan membuat task worker atau reservasi kuota untuk pencatatan manual; uji
+  dengan hitungan `tasks = 0` dan `quota_reservations = 0`.
 - Jangan biarkan nilai fakta yang diedit tetap `verified`; koreksi harus kembali
   `unverified` agar pemilik meninjau ulang.
 - Jangan membuat duplikat otomatis dari kemiripan judul/perusahaan; hanya buat
