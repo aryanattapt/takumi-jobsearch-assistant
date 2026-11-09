@@ -1,4 +1,8 @@
 import type {
+  AnswerSuggestion,
+  AnswerView,
+} from '@/lib/answers/service';
+import type {
   ApplicationAttemptRow,
   ApplicationDetail,
   ApplicationEventRow,
@@ -262,5 +266,40 @@ export function applicationDetailDto(detail: ApplicationDetail) {
       templateId: version.template_id,
       createdAt: version.created_at.toISOString(),
     })),
+  };
+}
+
+
+function sourceFactDto(fact: AnswerView['source_facts'][number]) {
+  return {
+    id: fact.id,
+    type: fact.type,
+    value: fact.value,
+    verificationStatus: fact.verificationStatus,
+  };
+}
+
+export function answerDto(row: AnswerView) {
+  return {
+    id: row.id,
+    question: row.question_text,
+    questionKey: row.question_key,
+    answer: row.answer,
+    verificationStatus: row.verification_status,
+    sourceFactIds: row.source_fact_ids,
+    sourceFacts: row.source_facts.map(sourceFactDto),
+    version: row.version,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  };
+}
+
+export function answerSuggestionDto(suggestion: AnswerSuggestion) {
+  return {
+    status: suggestion.status,
+    reason: suggestion.reason,
+    questionKey: suggestion.question_key,
+    similarity: suggestion.similarity,
+    answer: suggestion.answer ? answerDto(suggestion.answer) : null,
   };
 }

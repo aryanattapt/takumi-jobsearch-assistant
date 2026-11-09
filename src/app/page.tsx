@@ -4,9 +4,11 @@ import Dashboard, {
   type DashboardPrivacyRequest,
   type DashboardTask,
 } from '@/components/dashboard';
+import AnswerBank from '@/components/answer-bank';
 import ApplicationTracker from '@/components/application-tracker';
 import JobSearch from '@/components/job-search';
 import {
+  answerDto,
   applicationListDto,
   duplicateSuggestionDto,
   factDto,
@@ -21,6 +23,7 @@ import {
 } from '@/lib/jobs/service';
 import { getProfile, listFacts } from '@/lib/profile/service';
 import { listApplications } from '@/lib/applications/service';
+import { listAnswers } from '@/lib/answers/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,6 +69,7 @@ export default async function Page() {
     jobs,
     duplicates,
     applications,
+    answers,
   ] = await Promise.all([
     query<DocumentQueryRow>(
       `SELECT id, kind, original_name, media_type, size_bytes, status, version, created_at
@@ -106,6 +110,7 @@ export default async function Page() {
     listJobs(session.ownerId, { status: 'active', limit: 50 }),
     listDuplicateSuggestions(session.ownerId),
     listApplications(session.ownerId),
+    listAnswers(session.ownerId),
   ]);
 
   const documentsDto: DashboardDocument[] = documents.map((row) => ({
@@ -139,6 +144,7 @@ export default async function Page() {
   }));
 
   const jobsDto = jobs.map(jobListDto);
+  const factsDto = facts.map(factDto);
 
   return (
     <Dashboard
@@ -158,7 +164,7 @@ export default async function Page() {
         <JobSearch
           csrfToken={session.csrfToken}
           profile={profileDto(profile)}
-          facts={facts.map(factDto)}
+          facts={factsDto}
           jobs={jobsDto}
           duplicates={duplicates.map(duplicateSuggestionDto)}
           documents={documentsDto.map((document) => ({
@@ -176,6 +182,11 @@ export default async function Page() {
             title: job.title,
             company: job.company,
           }))}
+        />
+        <AnswerBank
+          csrfToken={session.csrfToken}
+          answers={answers.map(answerDto)}
+          facts={factsDto}
         />
       </>
     </Dashboard>

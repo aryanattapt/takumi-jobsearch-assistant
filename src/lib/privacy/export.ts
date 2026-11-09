@@ -141,11 +141,15 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
     );
     const answers = await query<{
       question_key: string;
+      question_text: string;
       answer_ciphertext: Buffer;
       source_fact_ids: string[];
       verification_status: string;
+      version: number;
     }>(
-      'SELECT question_key, answer_ciphertext, source_fact_ids, verification_status FROM answer_bank WHERE owner_id = $1',
+      `SELECT question_key, question_text, answer_ciphertext, source_fact_ids,
+              verification_status, version
+         FROM answer_bank WHERE owner_id = $1`,
       [ownerId],
     );
     const controls = await queryOne(
@@ -167,9 +171,11 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
       try {
         exportedAnswers.push({
           questionKey: answer.question_key,
+          questionText: answer.question_text,
           answer: decryptSecret(answer.answer_ciphertext),
           sourceFactIds: answer.source_fact_ids,
           verificationStatus: answer.verification_status,
+          version: answer.version,
         });
       } catch {
         unavailable.push({

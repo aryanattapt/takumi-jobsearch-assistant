@@ -5,8 +5,9 @@ in [`requirement/`](./requirement) and is treated as **read-only source of truth
 implementation decisions and their status are tracked in
 [`docs/decisions.md`](./docs/decisions.md).
 
-Current implementation: **Phase 0–2 + Phase 3 tracker slice** (private foundation,
-profile/manual job search, manual application tracking) — see
+Current implementation: **Phase 0–2 + Phase 3 tracker & answer-bank slices**
+(private foundation, profile/manual job search, manual application tracking,
+encrypted screening answers) — see
 [`docs/implementation-status.md`](./docs/implementation-status.md).
 
 ## What works today
@@ -36,10 +37,13 @@ profile/manual job search, manual application tracking) — see
   separate from recruitment stage, record owner-reported manual submissions with
   an idempotency key, optimistic versions, timeline events and no worker/quota
   side effects.
+- Encrypted screening answer bank with optimistic versions, verified/unverified/
+  retracted states, source-fact links, and deterministic suggestions. Sensitive,
+  legal or unknown questions always return `needs_user_input` instead of a guess.
 - Minimal accessible dashboard + login page, profile/fact editor, job import and
   filtering UI, application tracker UI, and health endpoints.
 
-Not built yet: scoring/ranking, document generation, screening Q&A, portal
+Not built yet: scoring/ranking, CV/cover generation and PDF checks, portal
 automation, approvals, quota enforcement, schedules UI, notifications, AI
 providers. See the phase table in `docs/implementation-status.md`.
 
@@ -125,6 +129,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | Duplicates | `GET /api/v1/duplicate-suggestions`, `POST /api/v1/duplicate-suggestions/{id}/resolve` |
 | Applications | `GET/POST /api/v1/applications`, `GET/PATCH /api/v1/applications/{id}` |
 | Tracker | `POST /api/v1/applications/{id}/manual-submissions`, `PATCH /api/v1/applications/{id}/recruitment-stage`, `GET /api/v1/applications/{id}/events` |
+| Answer bank | `GET/POST /api/v1/answer-bank`, `PATCH /api/v1/answer-bank/{id}`, `POST /api/v1/answer-bank/suggest` |
 | Tasks | `GET /api/v1/tasks/{id}`, `POST /api/v1/tasks/{id}/cancel` |
 
 All authenticated mutations require `x-csrf-token` (from login/session response)
