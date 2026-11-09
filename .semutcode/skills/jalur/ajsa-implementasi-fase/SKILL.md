@@ -39,8 +39,10 @@ test terhadap PostgreSQL asli. Tidak mencakup pemasangan environment Windows
    `runMigrations` memeriksa checksum dan akan menolak. Periksa migration lama
    dulu: tabel domain sering sudah ada (mis. applications/attempts/events di
    `0004_applications.sql`), jadi tambah hanya kolom yang benar-benar kurang.
-   Setiap tabel yang menyimpan data owner wajib punya `owner_id` + FK ke
-   `users`; kolom mutable yang dipakai UI sebaiknya punya `version`.
+   Untuk kolom `NOT NULL` baru, beri `DEFAULT` sementara lalu `UPDATE` baris lama
+   sebelum kolom dipakai. Setiap tabel yang menyimpan data owner wajib punya
+   `owner_id` + FK ke `users`; kolom mutable yang dipakai UI sebaiknya punya
+   `version`.
 
 4. **Buat pure logic terpisah.** Normalisasi/aturan identitas masuk ke
    `src/lib/<domain>/normalize.ts` agar bisa diuji tanpa database. Contoh yang
@@ -61,6 +63,10 @@ test terhadap PostgreSQL asli. Tidak mencakup pemasangan environment Windows
    `references/manual-command-tracker.md`.
    Untuk query daftar + detail, buat helper terpisah (`listX`, `getX`,
    `getXListRow`) daripada memfilter hasil `listX` di memori.
+   Untuk data sensitif (jawaban screening, secret provider): enkripsi dengan
+   `encryptSecret`/`decryptSecret` dari `src/lib/crypto/secrets.ts`, simpan di
+   kolom `bytea`, dan jangan pernah menaruh plaintext di audit/log. Pola lengkap
+   ada di `references/encrypted-owner-data.md`.
 
 6. **Tambahkan DTO di `src/lib/api/dto.ts`.** Ubah snake_case → camelCase, `Date`
    → `toISOString()`. Kolom PostgreSQL `numeric` kembali sebagai string, jadi
@@ -105,6 +111,10 @@ test terhadap PostgreSQL asli. Tidak mencakup pemasangan environment Windows
      yang disebut UAT.
    Jangan menguji route handler lewat HTTP bila service sudah menguji jalur yang
    sama; test service lebih cepat dan tetap memakai PostgreSQL asli.
+   Untuk data terenkripsi, baca ciphertext mentah dan pastikan plaintext tidak
+   ada, lalu pastikan `audit_events.details` juga tidak memuat plaintext.
+   Untuk classifier/denylist, uji setiap frase sensitif yang didukung, bukan
+   hanya satu contoh.
 
 10. **Verifikasi berurutan.**
     ```bash
@@ -149,8 +159,19 @@ test terhadap PostgreSQL asli. Tidak mencakup pemasangan environment Windows
   attempt lama bisa ada tanpa status application yang konsisten.
 - Jangan membuat task worker atau reservasi kuota untuk pencatatan manual; uji
   dengan hitungan `tasks = 0` dan `quota_reservations = 0`.
-- Jangan biarkan nilai fakta yang diedit tetap `verified`; koreksi harus kembali
-  `unverified` agar pemilik meninjau ulang.
+- Jangan biarkan nilai fakta atau jawaban yang diedit tetap `verified`:
+  koreksi harus kembali `unverified` agar pemilik meninjau ulang.
+- Jangan memakai `\b` di akhir alternatif prefix pada regex sensitif:
+  `\b(disabilit)\b` gagal cocok dengan `disability`; uji tiap frase dan taruh
+  boundary hanya di awal bila memakai prefix.
+- Jangan memakai Jaccard murni untuk kemiripan pertanyaan: pertanyaan pendek vs
+  panjang dengan kata tambahan gagal cocok. Pakai `max(jaccard, containment * 0.9)`
+  dan tetap utamakan exact normalized key.
+- Jangan mengembalikan jawaban tersimpan untuk pertanyaan sensitif walaupun
+  statusnya `verified`: cek sensitif sebelum matching, karena AC-08/BR-09
+  mewajibkan input eksplisit.
+- Jangan menyimpan teks jawaban ke `recordAudit`; cukup jumlah fakta sumber dan
+  status verifikasi agar log tidak membocorkan data pribadi.
 - Jangan membuat duplikat otomatis dari kemiripan judul/perusahaan; hanya buat
   `duplicate_suggestions` dengan confidence dan keputusan manual.
 - Saat merge dua job, tolak bila keduanya sudah punya application
