@@ -4,8 +4,10 @@ import Dashboard, {
   type DashboardPrivacyRequest,
   type DashboardTask,
 } from '@/components/dashboard';
+import ApplicationTracker from '@/components/application-tracker';
 import JobSearch from '@/components/job-search';
 import {
+  applicationListDto,
   duplicateSuggestionDto,
   factDto,
   jobListDto,
@@ -18,6 +20,7 @@ import {
   listJobs,
 } from '@/lib/jobs/service';
 import { getProfile, listFacts } from '@/lib/profile/service';
+import { listApplications } from '@/lib/applications/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +65,7 @@ export default async function Page() {
     facts,
     jobs,
     duplicates,
+    applications,
   ] = await Promise.all([
     query<DocumentQueryRow>(
       `SELECT id, kind, original_name, media_type, size_bytes, status, version, created_at
@@ -101,6 +105,7 @@ export default async function Page() {
     listFacts(session.ownerId),
     listJobs(session.ownerId, { status: 'active', limit: 50 }),
     listDuplicateSuggestions(session.ownerId),
+    listApplications(session.ownerId),
   ]);
 
   const documentsDto: DashboardDocument[] = documents.map((row) => ({
@@ -133,6 +138,8 @@ export default async function Page() {
     lastError: row.last_error,
   }));
 
+  const jobsDto = jobs.map(jobListDto);
+
   return (
     <Dashboard
       owner={{
@@ -147,19 +154,30 @@ export default async function Page() {
       browserEnabled={controls?.browser_enabled ?? false}
       activeHolds={holds?.count ?? 0}
     >
-      <JobSearch
-        csrfToken={session.csrfToken}
-        profile={profileDto(profile)}
-        facts={facts.map(factDto)}
-        jobs={jobs.map(jobListDto)}
-        duplicates={duplicates.map(duplicateSuggestionDto)}
-        documents={documentsDto.map((document) => ({
-          id: document.id,
-          originalName: document.originalName,
-          kind: document.kind,
-          status: document.status,
-        }))}
-      />
+      <>
+        <JobSearch
+          csrfToken={session.csrfToken}
+          profile={profileDto(profile)}
+          facts={facts.map(factDto)}
+          jobs={jobsDto}
+          duplicates={duplicates.map(duplicateSuggestionDto)}
+          documents={documentsDto.map((document) => ({
+            id: document.id,
+            originalName: document.originalName,
+            kind: document.kind,
+            status: document.status,
+          }))}
+        />
+        <ApplicationTracker
+          csrfToken={session.csrfToken}
+          applications={applications.map(applicationListDto)}
+          jobs={jobsDto.map((job) => ({
+            id: job.id,
+            title: job.title,
+            company: job.company,
+          }))}
+        />
+      </>
     </Dashboard>
   );
 }

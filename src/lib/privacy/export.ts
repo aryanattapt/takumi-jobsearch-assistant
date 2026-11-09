@@ -125,6 +125,13 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
       'SELECT * FROM applications WHERE owner_id = $1 ORDER BY created_at',
       [ownerId],
     );
+    const applicationAttempts = await query(
+      `SELECT t.* FROM application_attempts t
+         JOIN applications a ON a.id = t.application_id
+        WHERE a.owner_id = $1
+        ORDER BY t.created_at`,
+      [ownerId],
+    );
     const applicationEvents = await query(
       `SELECT e.* FROM application_events e
          JOIN applications a ON a.id = e.application_id
@@ -193,7 +200,11 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
     });
     add('documents.json', { documents, documentVersions });
     add('jobs.json', { jobs });
-    add('applications.json', { applications, events: applicationEvents });
+    add('applications.json', {
+      applications,
+      attempts: applicationAttempts,
+      events: applicationEvents,
+    });
     add('answers.json', { answers: exportedAnswers });
     add('settings.json', {
       submissionControls: controls,

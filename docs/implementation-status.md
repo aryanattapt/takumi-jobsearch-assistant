@@ -64,6 +64,32 @@ Requirement traceability (Phase 2):
 | AC-04 / UAT-09 | Merge returns `MERGE_CONFLICT` when both jobs already have applications |
 | BR-04 / BR-05 | Normalization is pure and unit tested; list filters are explicit (`active`, `archived`, `all`) and `unknown` is not invented |
 
+## Phase 3 — Tracker P0 slice (E09, partial)
+
+| Epic | Status | What exists |
+|---|---|---|
+| E09 Tracker | Partial (P0 manual path) | One draft application per job, owner notes with `current_version`, manual submission records (`mode=manual`, `state=submitted_confirmed`, `confirmation_source=manual`), target lock per job, separation from recruitment stage, timeline events, no worker task/quota consumption, deterministic conflict when a `submit_unknown` attempt exists. |
+| E08 Documents/Q&A | Not started | Requires generation/PDF/Q&A work and DEC-14. |
+| E07 AI | Not started | Provider abstraction and scoring remain pending. |
+
+Verification (local, 2026-11-09):
+
+- `npm run typecheck` — pass
+- `npm run lint` — pass
+- `npx vitest run tests/integration/applications.test.ts` — 8 tests pass
+- Full `npm test` — 15 files / 88 tests pass
+- `npm run build` — still not run on this exFAT checkout
+
+Requirement traceability (tracker):
+
+| Requirement/UAT | Coverage |
+|---|---|
+| AC-11 / UAT-37 | Manual submission creates one terminal `manual` attempt, records the reported time and known document versions, and rejects duplicate reports or stale versions |
+| UAT-37 (unknown) | Existing `submit_unknown` attempt returns `SUBMIT_UNKNOWN_REQUIRES_RECONCILIATION` instead of overwriting history |
+| UAT-23 | Recruitment stage changes create timeline events and never change submission status |
+| BR-21 | No browser task and no quota row are created by manual reports |
+| UAT-25 | Application list/detail/update/manual report all return `NOT_FOUND` for another owner |
+
 ## Requirement traceability (foundation)
 
 These scenarios now have executable coverage; this is **not** a claim that UAT is
@@ -83,7 +109,7 @@ signed off by the owner.
 
 ## Not started yet
 
-- Phase 3: AI provider adapter, scoring/rubric, CV/cover generation, PDF checks, screening Q&A, tracker.
+- Phase 3 remainder: AI provider adapter, scoring/rubric, CV/cover generation, PDF checks, screening Q&A.
 - Phase 4: portal login/session, preflight snapshots, approvals, quota reservations, dispatch intent, evidence/reconciliation, recovery holds API.
 - Phase 5/6: additional adapters, schedules UI, notifications, Gmail/Notion.
 
@@ -99,6 +125,11 @@ signed off by the owner.
 - `saved_searches` exists but there is no saved-search UI or schedule wiring yet.
 - Profile facts accept free-form JSON values; type-specific schemas can be added
   when extraction templates are defined.
+- Manual submission uses `target_key = job:<id>`; cross-listing verification and
+  reconciliation of `submit_unknown` remain Phase 4 work.
+- `document_versions` can be recorded on a manual submission only when those
+  versions already exist; generation/PDF versioning is still Phase 3 remainder.
+- Application cancellation/reopen and Gmail-based suggestions are not implemented.
 - No owner password-recovery flow (CLI only), as specified for the pilot but
   operationally incomplete.
 - Cross-owner tests use a directly inserted second user; production provisioning

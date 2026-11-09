@@ -1,3 +1,10 @@
+import type {
+  ApplicationAttemptRow,
+  ApplicationDetail,
+  ApplicationEventRow,
+  ApplicationListRow,
+  ApplicationRow,
+} from '@/lib/applications/service';
 import type { DocumentRow } from '@/lib/documents/service';
 import type { PrivacyRequestRow } from '@/lib/privacy/requests';
 import type { TaskRecord } from '@/lib/queue/tasks';
@@ -178,5 +185,82 @@ export function duplicateSuggestionDto(row: DuplicateSuggestionRow) {
       status: row.right_status,
       listingCount: row.right_listing_count,
     },
+  };
+}
+
+
+function applicationBaseDto(row: ApplicationRow) {
+  return {
+    id: row.id,
+    jobId: row.job_id,
+    submissionStatus: row.submission_status,
+    recruitmentStage: row.recruitment_stage,
+    notes: row.notes,
+    version: row.current_version,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  };
+}
+
+export function applicationListDto(row: ApplicationListRow) {
+  return {
+    ...applicationBaseDto(row),
+    job: {
+      title: row.job_title,
+      company: row.job_company,
+      location: row.job_location,
+      status: row.job_status,
+      listingId: row.listing_id,
+    },
+    latestAttemptState: row.latest_attempt_state,
+    latestSubmittedAt: row.latest_submitted_at?.toISOString() ?? null,
+  };
+}
+
+export function applicationAttemptDto(row: ApplicationAttemptRow) {
+  return {
+    id: row.id,
+    listingId: row.listing_id,
+    mode: row.mode,
+    state: row.state,
+    targetKey: row.target_key,
+    version: row.version,
+    reportedSubmittedAt: row.reported_submitted_at?.toISOString() ?? null,
+    confirmationSource: row.confirmation_source,
+    documentVersionIds: row.document_version_ids,
+    errorCode: row.error_code,
+    finishedAt: row.finished_at?.toISOString() ?? null,
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
+export function applicationEventDto(row: ApplicationEventRow) {
+  return {
+    id: row.id,
+    attemptId: row.attempt_id,
+    eventType: row.event_type,
+    fromState: row.from_state,
+    toState: row.to_state,
+    actorType: row.actor_type,
+    reasonCode: row.reason_code,
+    occurredAt: row.occurred_at.toISOString(),
+  };
+}
+
+export function applicationDetailDto(detail: ApplicationDetail) {
+  return {
+    ...applicationBaseDto(detail.application),
+    job: detail.job,
+    attempts: detail.attempts.map(applicationAttemptDto),
+    events: detail.events.map(applicationEventDto),
+    documentVersions: detail.documentVersions.map((version) => ({
+      id: version.id,
+      documentId: version.document_id,
+      kind: version.kind,
+      versionNo: version.version_no,
+      contentHash: version.content_hash,
+      templateId: version.template_id,
+      createdAt: version.created_at.toISOString(),
+    })),
   };
 }

@@ -5,8 +5,9 @@ in [`requirement/`](./requirement) and is treated as **read-only source of truth
 implementation decisions and their status are tracked in
 [`docs/decisions.md`](./docs/decisions.md).
 
-Current implementation: **Phase 0–2** (private foundation + profile/manual job
-search) — see [`docs/implementation-status.md`](./docs/implementation-status.md).
+Current implementation: **Phase 0–2 + Phase 3 tracker slice** (private foundation,
+profile/manual job search, manual application tracking) — see
+[`docs/implementation-status.md`](./docs/implementation-status.md).
 
 ## What works today
 
@@ -31,12 +32,16 @@ search) — see [`docs/implementation-status.md`](./docs/implementation-status.m
 - Manual job import (`owner_paste` provenance), canonical URL validation without
   fetching, stable listing identity, revision history, deduplication suggestions,
   bookmark/archive curation and local text filters.
+- P0 application tracker: create one draft per job, keep submission status
+  separate from recruitment stage, record owner-reported manual submissions with
+  an idempotency key, optimistic versions, timeline events and no worker/quota
+  side effects.
 - Minimal accessible dashboard + login page, profile/fact editor, job import and
-  filtering UI, and health endpoints.
+  filtering UI, application tracker UI, and health endpoints.
 
-Not built yet: scoring/ranking, document generation, portal automation, approvals,
-quota enforcement, schedules UI, notifications, AI providers. See the phase table
-in `docs/implementation-status.md`.
+Not built yet: scoring/ranking, document generation, screening Q&A, portal
+automation, approvals, quota enforcement, schedules UI, notifications, AI
+providers. See the phase table in `docs/implementation-status.md`.
 
 ## Stack
 
@@ -118,6 +123,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | Profile | `GET/PATCH /api/v1/profile`, `GET/POST /api/v1/profile/facts`, `PATCH /api/v1/profile/facts/{id}` |
 | Jobs | `GET /api/v1/jobs`, `GET /api/v1/jobs/{id}`, `PATCH /api/v1/jobs/{id}`, `POST /api/v1/jobs/imports` |
 | Duplicates | `GET /api/v1/duplicate-suggestions`, `POST /api/v1/duplicate-suggestions/{id}/resolve` |
+| Applications | `GET/POST /api/v1/applications`, `GET/PATCH /api/v1/applications/{id}` |
+| Tracker | `POST /api/v1/applications/{id}/manual-submissions`, `PATCH /api/v1/applications/{id}/recruitment-stage`, `GET /api/v1/applications/{id}/events` |
 | Tasks | `GET /api/v1/tasks/{id}`, `POST /api/v1/tasks/{id}/cancel` |
 
 All authenticated mutations require `x-csrf-token` (from login/session response)
