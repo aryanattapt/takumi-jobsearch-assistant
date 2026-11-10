@@ -3,7 +3,7 @@
 Tracks execution of `requirement/08-IPD-Implementation-Plan.md`. The requirement
 package remains unchanged and authoritative.
 
-Last updated: 2026-11-09.
+Last updated: 2026-11-10.
 
 ## Phase 0 — Discovery & integration
 
@@ -70,7 +70,7 @@ Requirement traceability (Phase 2):
 |---|---|---|
 | E09 Tracker | Partial (P0 manual path) | One draft application per job, owner notes with `current_version`, manual submission records (`mode=manual`, `state=submitted_confirmed`, `confirmation_source=manual`), target lock per job, separation from recruitment stage, timeline events, no worker task/quota consumption, deterministic conflict when a `submit_unknown` attempt exists. |
 | E08 Documents/Q&A | Partial (answer bank only) | Encrypted answer bank with owner notes, `version`, `unverified/verified/retracted`, source fact links, deterministic exact/near-question matching, and `needs_user_input` for sensitive/legal/unknown questions. No AI call and no form auto-fill yet. |
-| E07 AI | Not started | Provider abstraction and scoring remain pending. |
+| E07 AI/evaluation | Partial | Local rule-based scoring and ranking at `src/lib/evaluations/`; no provider calls or provider configuration. The proposal weights are versioned as provisional. |
 
 Verification (local, 2026-11-09):
 
@@ -79,6 +79,17 @@ Verification (local, 2026-11-09):
 - `npx vitest run tests/integration/applications.test.ts tests/integration/answer-bank.test.ts` — 16 tests pass
 - Full `npm test` — 17 files / 99 tests pass
 - `npm run build` — still not run on this exFAT checkout
+
+Implementation update (2026-11-10):
+
+- Added local-only evaluation persistence, owner-scoped history/API, profile and
+  posting snapshot checks, evidence-linked dimensions, tri-state hard filters,
+  and dashboard ranking. This is a provisional heuristic slice; no AI provider
+  receives profile or posting data.
+- Profile version now advances when a fact is created, edited, verified, or
+  retracted, so saved evaluations can be identified as stale after profile edits.
+- Tests, typecheck, lint, build, and UAT were **not run for this update**. The
+  earlier results above apply to the 2026-11-09 revision only.
 
 Requirement traceability (Phase 3 slices):
 
@@ -91,6 +102,8 @@ Requirement traceability (Phase 3 slices):
 | UAT-25 | Application list/detail/update/manual report all return `NOT_FOUND` for another owner |
 | AC-08 / BR-09 | Answer bank: encrypted at rest, verified-only suggestions, unverified shown for review, sensitive/legal/unknown → `needs_user_input`, source facts displayed, answers absent from audit |
 | UAT-24 (answer data) | Answer plaintext is not present in audit details or ciphertext; export decrypts only for the owner |
+| AC-05 / UAT-11 | `src/lib/evaluations/scorer.ts` and `/jobs/{id}/evaluations` implement a provisional local rubric; UAT-11 and regression tests have not been run for this update |
+| UAT-12 | Local scorer returns no total score without a saved posting revision and description; not verified in this update |
 
 ## Requirement traceability (foundation)
 
@@ -111,7 +124,7 @@ signed off by the owner.
 
 ## Not started yet
 
-- Phase 3 remainder: AI provider adapter, scoring/rubric, CV/cover generation, PDF checks, and wiring answers into application forms.
+- Phase 3 remainder: AI provider configuration and model-backed evaluation, owner-confirmed rubric, CV/cover generation, PDF checks, and wiring answers into application forms.
 - Phase 4: portal login/session, preflight snapshots, approvals, quota reservations, dispatch intent, evidence/reconciliation, recovery holds API.
 - Phase 5/6: additional adapters, schedules UI, notifications, Gmail/Notion.
 
@@ -121,6 +134,10 @@ signed off by the owner.
   requirement study (worker always receives `owner_id`, but the tables do not
   enforce it structurally beyond FK on `tasks`).
 - AI budget ledger is not modelled; budget remains a future preference.
+- Current evaluations are conservative string/rule comparisons. They can miss
+  synonyms and context, and are not equivalent to the planned AI evaluator.
+  Rubric weights, filter semantics, and UAT-11 results still need owner review;
+  do not treat a shortlist label as a hiring recommendation.
 - Duplicate detection only compares normalized company + title tokens. It is
   intentionally conservative and only proposes cross-source pairs; Phase 3
   ranking may add a stronger fingerprint.

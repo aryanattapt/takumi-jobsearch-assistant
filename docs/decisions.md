@@ -16,7 +16,7 @@ Status legend: **assumed** = used because the plan needs a concrete default;
 | DEC-03 | assumed (provisional) | Implementation lives in this repository, alongside `requirement/` | Repository visibility/license still unconfirmed |
 | DEC-04 | assumed for P0 | No live portal adapter yet; manual import path is implemented (Phase 2) | Live adapters keep `enabled = false`; `manual` source is the only enabled source |
 | DEC-05 | pending | Not implemented yet | Approval expiry constant will live in config |
-| DEC-06 | pending | Not implemented yet | Rubric version will be stored with each evaluation |
+| DEC-06 | provisional implementation | Local rule-based evaluator uses the proposal weights 30/25/15/30 under `local-rule-v1-proposal`; unknown dimensions keep the total score null | Owner confirmation and UAT-11 are still pending; this is not a confirmed product decision |
 | DEC-07 | assumed | P0 manual submission, browser automation disabled, schedules disabled | `submission_controls.browser_enabled = false` by default |
 | DEC-08 | assumed | Export TTL 24 h, backup retention 30 days, export read requires matching privacy generation | All values configurable via env |
 | DEC-09 | assumed | No provider configured by default; secrets encrypted with AES-256-GCM using `MASTER_KEY` | Fallback across providers stays off |

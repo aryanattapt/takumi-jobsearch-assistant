@@ -5,9 +5,10 @@ in [`requirement/`](./requirement) and is treated as **read-only source of truth
 implementation decisions and their status are tracked in
 [`docs/decisions.md`](./docs/decisions.md).
 
-Current implementation: **Phase 0–2 + Phase 3 tracker & answer-bank slices**
-(private foundation, profile/manual job search, manual application tracking,
-encrypted screening answers) — see
+Current implementation: **Phase 0–2 + Phase 3 tracker, answer-bank, and local
+job-evaluation slices** (private foundation, profile/manual job search, manual
+application tracking, encrypted screening answers, and evidence-linked heuristic
+scoring) — see
 [`docs/implementation-status.md`](./docs/implementation-status.md).
 
 ## What works today
@@ -25,8 +26,9 @@ encrypted screening answers) — see
 - PostgreSQL-backed worker queue with `FOR UPDATE SKIP LOCKED`, lease tokens
   (fencing), heartbeat, retry/backoff, graceful shutdown, and an expired-lease
   sweep that refuses to auto-retry potentially external tasks.
-- Privacy exports (ZIP + manifest, 24 h default TTL), document purge with fact
-  retraction, workspace reset that revokes exports via privacy generation,
+- Privacy exports (ZIP + manifest, including evaluation history, 24 h default
+  TTL), document purge with fact retraction, workspace reset that revokes
+  exports via privacy generation,
   disables browser submission and opens a global recovery hold.
 - Candidate profile with optimistic versioning and versioned facts
   (`unverified`, `verified`, `retracted`), including private source documents.
@@ -40,12 +42,18 @@ encrypted screening answers) — see
 - Encrypted screening answer bank with optimistic versions, verified/unverified/
   retracted states, source-fact links, and deterministic suggestions. Sensitive,
   legal or unknown questions always return `needs_user_input` instead of a guess.
+- Versioned local job evaluations compare verified skills/facts and explicit
+  profile preferences with a saved posting revision. Dimensions and hard filters
+  show evidence, gaps, and unknowns; incomplete dimensions keep the total score
+  null and require review. Scores are heuristic match measures, not hiring odds.
 - Minimal accessible dashboard + login page, profile/fact editor, job import and
-  filtering UI, application tracker UI, and health endpoints.
+  filtering/ranking UI, evaluation details, application tracker UI, and health
+  endpoints.
 
-Not built yet: scoring/ranking, CV/cover generation and PDF checks, portal
-automation, approvals, quota enforcement, schedules UI, notifications, AI
-providers. See the phase table in `docs/implementation-status.md`.
+Not built yet: AI-provider-backed evaluation, CV/cover generation and PDF
+checks, portal automation, approvals, quota enforcement, schedules UI,
+notifications, and AI provider configuration. See the phase table in
+`docs/implementation-status.md`.
 
 ## Stack
 
@@ -126,6 +134,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | Privacy | `POST /api/v1/privacy/exports`, `POST /api/v1/privacy/deletions`, `GET /api/v1/privacy/requests/{id}`, `GET /api/v1/privacy/requests/{id}/download` |
 | Profile | `GET/PATCH /api/v1/profile`, `GET/POST /api/v1/profile/facts`, `PATCH /api/v1/profile/facts/{id}` |
 | Jobs | `GET /api/v1/jobs`, `GET /api/v1/jobs/{id}`, `PATCH /api/v1/jobs/{id}`, `POST /api/v1/jobs/imports` |
+| Evaluations | `GET/POST /api/v1/jobs/{id}/evaluations`, `GET /api/v1/jobs/{id}/evaluations/{evaluationId}` |
 | Duplicates | `GET /api/v1/duplicate-suggestions`, `POST /api/v1/duplicate-suggestions/{id}/resolve` |
 | Applications | `GET/POST /api/v1/applications`, `GET/PATCH /api/v1/applications/{id}` |
 | Tracker | `POST /api/v1/applications/{id}/manual-submissions`, `PATCH /api/v1/applications/{id}/recruitment-stage`, `GET /api/v1/applications/{id}/events` |
@@ -135,6 +144,36 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 All authenticated mutations require `x-csrf-token` (from login/session response)
 and a same-origin `Origin`. Async commands require `Idempotency-Key`. Response
 envelopes follow the requirement contract: `{ data, meta }` / `{ error }`.
+The current evaluation endpoint is synchronous and local-only. Its provisional
+rubric remains subject to owner confirmation; it sends no profile or posting
+data to an AI provider.
+
+### Local evaluation preferences
+
+Preferences use arrays for phrase lists. For example:
+
+```json
+{
+  "targetTitles": ["Backend Developer"],
+  "preferredLocations": ["Jakarta"],
+  "preferredWorkModes": ["hybrid", "remote"],
+  "minimumSalary": { "amount": 15000000, "currency": "IDR" },
+  "requiredSkills": ["Java", "PostgreSQL"],
+  "excludeTerms": ["intern"],
+  "excludedCompanies": ["Example Corp"],
+  "excludedIndustries": ["bank"]
+}
+```
+
+Only verified skill facts are used for the skill dimension and `requiredSkills`
+filter; `requiredSkills` is a candidate-side must-have list checked against those
+facts. `excludeTerms` scans the title, company, location, and saved description;
+an absent term stays `unknown` because a pasted description may be incomplete.
+An overlapping salary range also stays `unknown` until the lower bound meets
+the minimum or the upper bound falls below it. A verified `work_experience` fact can provide
+`{"totalYearsExperience": 5}` when the posting states a years requirement.
+Industry filters remain `unknown` because the current implementation does not
+research or infer company industries.
 
 ## Security posture
 

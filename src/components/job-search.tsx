@@ -47,8 +47,42 @@ export interface WorkspaceJob {
     revisionId: string | null;
     count: number;
   };
+  latestEvaluation: WorkspaceEvaluation | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WorkspaceEvaluation {
+  id: string;
+  jobId?: string;
+  evaluationVersion: number;
+  profileVersion: number;
+  postingRevisionId: string | null;
+  rubricVersion: string;
+  status: 'scored' | 'insufficient_data' | 'unreachable' | 'failed';
+  score: number | null;
+  decision: 'shortlist' | 'review' | 'excluded';
+  dimensions: Array<{
+    name: string;
+    score: number | null;
+    weight: number;
+    reason: string;
+    evidence: Array<{ kind: string; reference: string; excerpt?: string }>;
+    gaps: string[];
+  }>;
+  hardFilters: Array<{
+    name: string;
+    state: 'pass' | 'fail' | 'unknown';
+    reason: string;
+  }>;
+  matches: string[];
+  gaps: string[];
+  unknowns: string[];
+  vetoes: string[];
+  sourceRefs: Record<string, unknown>;
+  model: string | null;
+  createdAt: string | null;
+  isCurrent?: boolean;
 }
 
 export interface WorkspaceDuplicate {
@@ -134,6 +168,22 @@ function describeValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function evaluationDecisionLabel(decision: WorkspaceEvaluation['decision']): string {
+  if (decision === 'shortlist') return 'Shortlist awal';
+  if (decision === 'excluded') return 'Tidak lolos filter';
+  return 'Butuh pemeriksaan';
+}
+
+function dimensionLabel(name: string): string {
+  const labels: Record<string, string> = {
+    technical: 'Keahlian teknis',
+    experience: 'Pengalaman',
+    work_context: 'Konteks kerja',
+    career_alignment: 'Arah karier',
+  };
+  return labels[name] ?? name;
+}
+
 export default function JobSearch(props: JobSearchProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -158,8 +208,39 @@ export default function JobSearch(props: JobSearchProps) {
 
   const [filterQuery, setFilterQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
+  const [sortOrder, setSortOrder] = useState<'recent' | 'score'>('recent');
   const [jobs, setJobs] = useState(props.jobs);
   const [duplicates, setDuplicates] = useState(props.duplicates);
+
+  function evaluationIsCurrent(job: WorkspaceJob): boolean {
+    const evaluation = job.latestEvaluation;
+    return Boolean(
+      evaluation &&
+      evaluation.isCurrent !== false &&
+      evaluation.profileVersion === props.profile.version &&
+      evaluation.postingRevisionId === job.listing.revisionId,
+    );
+  }
+
+  const orderedJobs = [...jobs].sort((left, right) => {
+    if (sortOrder === 'recent') {
+      return new Date(right.listing.retrievedAt).getTime() - new Date(left.listing.retrievedAt).getTime();
+    }
+    const decisionOrder: Record<WorkspaceEvaluation['decision'] | 'none', number> = {
+      shortlist: 0,
+      review: 1,
+      excluded: 2,
+      none: 3,
+    };
+    const leftEvaluation = left.latestEvaluation;
+    const rightEvaluation = right.latestEvaluation;
+    const leftRank = decisionOrder[leftEvaluation?.decision ?? 'none'];
+    const rightRank = decisionOrder[rightEvaluation?.decision ?? 'none'];
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    const scoreDiff = (rightEvaluation?.score ?? -1) - (leftEvaluation?.score ?? -1);
+    if (scoreDiff !== 0) return scoreDiff;
+    return new Date(right.listing.retrievedAt).getTime() - new Date(left.listing.retrievedAt).getTime();
+  });
 
   const run = useCallback(
     async (action: () => Promise<void>) => {
@@ -362,6 +443,32 @@ export default function JobSearch(props: JobSearchProps) {
     });
   }
 
+  async function evaluateJob(job: WorkspaceJob): Promise<void> {
+    await run(async () => {
+      const evaluation = await callApi<WorkspaceEvaluation>(
+        `/api/v1/jobs/${job.id}/evaluations`,
+        {
+          method: 'POST',
+          csrf: props.csrfToken,
+          idempotencyKey: crypto.randomUUID(),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expectedProfileVersion: props.profile.version,
+            expectedPostingRevisionId: job.listing.revisionId,
+          }),
+        },
+      );
+      setJobs((current) => current.map((item) =>
+        item.id === job.id ? { ...item, latestEvaluation: evaluation } : item,
+      ));
+      setMessage(
+        evaluation.score === null
+          ? 'Penilaian disimpan sebagai butuh pemeriksaan karena bukti belum cukup.'
+          : `Skor kecocokan heuristik: ${evaluation.score.toFixed(1)} dari 100. Tinjau dimensi dan sumbernya.`,
+      );
+    });
+  }
+
   async function archiveJob(job: WorkspaceJob): Promise<void> {
     const reason = window.prompt(
       `Arsipkan "${job.title}"? Tulis alasan (opsional) agar keputusan bisa ditinjau nanti:`,
@@ -457,6 +564,12 @@ export default function JobSearch(props: JobSearchProps) {
               onChange={(event) => setPreferences(event.target.value)}
               spellCheck={false}
             />
+            <p className="muted" style={{ fontSize: '0.8rem' }}>
+              Kunci untuk penilaian: targetTitles, preferredLocations, preferredWorkModes,
+              minimumSalary, requiredSkills, excludeTerms, excludedCompanies, dan
+              excludedIndustries. Contoh: {`{"targetTitles":["Backend Developer"],"preferredLocations":["Jakarta"],"preferredWorkModes":["hybrid"]}`}
+              . Industri tanpa data tetap berstatus perlu pemeriksaan.
+            </p>
           </div>
           <div className="row" style={{ marginTop: 12 }}>
             <button type="submit" disabled={busy}>
@@ -495,7 +608,9 @@ export default function JobSearch(props: JobSearchProps) {
               rows={2}
               value={factValue}
               onChange={(event) => setFactValue(event.target.value)}
-              placeholder='Contoh: TypeScript atau {"name":"TypeScript","years":5}'
+              placeholder={factType === 'work_experience'
+                ? '{"totalYearsExperience":5}'
+                : 'Skill, contoh: TypeScript'}
             />
           </div>
           <div>
@@ -726,6 +841,17 @@ export default function JobSearch(props: JobSearchProps) {
               <option value="all">Semua</option>
             </select>
           </div>
+          <div>
+            <label htmlFor="job-sort">Urutkan</label>
+            <select
+              id="job-sort"
+              value={sortOrder}
+              onChange={(event) => setSortOrder(event.target.value as 'recent' | 'score')}
+            >
+              <option value="recent">Terbaru</option>
+              <option value="score">Kecocokan</option>
+            </select>
+          </div>
           <button type="submit" className="secondary" disabled={busy}>
             Terapkan
           </button>
@@ -737,7 +863,7 @@ export default function JobSearch(props: JobSearchProps) {
           </p>
         ) : (
           <ul className="card-list" style={{ marginTop: 14 }}>
-            {jobs.map((job) => (
+            {orderedJobs.map((job) => (
               <li key={job.id}>
                 <div style={{ flex: 1, minWidth: 260 }}>
                   <strong>{job.title || job.id}</strong>
@@ -776,6 +902,62 @@ export default function JobSearch(props: JobSearchProps) {
                       Alasan arsip: {job.ignoredReason}
                     </p>
                   ) : null}
+                  {job.latestEvaluation ? (
+                    <details style={{ marginTop: 10 }}>
+                      <summary>
+                        {evaluationDecisionLabel(job.latestEvaluation.decision)}
+                        {' · '}{job.latestEvaluation.score === null
+                          ? 'skor belum cukup'
+                          : `${job.latestEvaluation.score.toFixed(1)} / 100`}
+                        {!evaluationIsCurrent(job) ? ' · versi lama' : ''}
+                      </summary>
+                      <p className="muted" style={{ fontSize: '0.85rem' }}>
+                        Heuristik lokal · rubric {job.latestEvaluation.rubricVersion} · versi evaluasi {job.latestEvaluation.evaluationVersion}
+                        {!evaluationIsCurrent(job)
+                          ? ' · profil atau posting berubah sejak penilaian ini.'
+                          : ' · snapshot profil dan posting masih cocok.'}
+                      </p>
+                      <ul>
+                        {job.latestEvaluation.dimensions.map((dimension) => (
+                          <li key={dimension.name}>
+                            <strong>
+                              {dimensionLabel(dimension.name)}:{' '}
+                              {dimension.score === null ? 'belum cukup bukti' : `${dimension.score.toFixed(1)} / 100`}
+                              {' · '}{Math.round(dimension.weight * 100)}%
+                            </strong>
+                            <div className="muted" style={{ fontSize: '0.85rem' }}>
+                              {dimension.reason}
+                            </div>
+                            {dimension.evidence.length ? (
+                              <div className="muted" style={{ fontSize: '0.8rem' }}>
+                                Bukti: {dimension.evidence.map((item) => item.excerpt ?? item.reference).join(' · ')}
+                              </div>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                      {job.latestEvaluation.hardFilters.length ? (
+                        <div>
+                          <strong>Filter</strong>
+                          <ul>
+                            {job.latestEvaluation.hardFilters.map((filter) => (
+                              <li key={filter.name}>
+                                <span className={`badge ${filter.state === 'pass' ? 'ok' : filter.state === 'fail' ? 'bad' : 'warn'}`}>
+                                  {filter.state}
+                                </span>{' '}
+                                {filter.name}: {filter.reason}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {job.latestEvaluation.unknowns.length ? (
+                        <p className="muted" style={{ fontSize: '0.85rem' }}>
+                          Perlu dilengkapi: {job.latestEvaluation.unknowns.join(' · ')}
+                        </p>
+                      ) : null}
+                    </details>
+                  ) : null}
                 </div>
                 <div className="row" style={{ alignItems: 'flex-start' }}>
                   {job.listing.canonicalUrl ? (
@@ -793,6 +975,14 @@ export default function JobSearch(props: JobSearchProps) {
                     disabled={busy}
                   >
                     {job.bookmarked ? 'Batalkan simpan' : 'Simpan'}
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => evaluateJob(job)}
+                    disabled={busy || !job.listing.revisionId}
+                    title={!job.listing.revisionId ? 'Tambahkan deskripsi posting terlebih dahulu.' : undefined}
+                  >
+                    {evaluationIsCurrent(job) ? 'Hitung ulang' : 'Hitung kecocokan'}
                   </button>
                   {job.status === 'active' ? (
                     <button

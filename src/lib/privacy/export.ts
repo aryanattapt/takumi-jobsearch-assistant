@@ -121,6 +121,15 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
         ORDER BY j.created_at`,
       [ownerId],
     );
+    const evaluations = await query(
+      `SELECT id, job_id, evaluation_version, profile_version,
+              posting_revision_id, rubric_version, score_json, score,
+              gaps_json, source_refs, model, status, created_at
+         FROM match_evaluations
+        WHERE owner_id = $1
+        ORDER BY created_at, evaluation_version`,
+      [ownerId],
+    );
     const applications = await query(
       'SELECT * FROM applications WHERE owner_id = $1 ORDER BY created_at',
       [ownerId],
@@ -206,6 +215,7 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
     });
     add('documents.json', { documents, documentVersions });
     add('jobs.json', { jobs });
+    add('evaluations.json', { evaluations });
     add('applications.json', {
       applications,
       attempts: applicationAttempts,

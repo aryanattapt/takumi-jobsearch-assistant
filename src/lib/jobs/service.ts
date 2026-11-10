@@ -3,6 +3,7 @@ import { recordAudit } from '@/lib/audit';
 import { query, queryOne, withTransaction } from '@/lib/db/pool';
 import { ApiError, apiErrors } from '@/lib/http/errors';
 import { postingContentHash, duplicateConfidence } from '@/lib/jobs/normalize';
+import type { EvaluationComputation } from '@/lib/evaluations/scorer';
 
 export type JobStatus = 'active' | 'archived' | 'merged';
 
@@ -37,6 +38,19 @@ export interface JobListRow extends JobRow {
   provenance: string | null;
   revision_retrieved_at: Date | null;
   listing_count: number;
+  current_profile_version: number | null;
+  latest_evaluation_id: string | null;
+  latest_evaluation_version: number | null;
+  latest_evaluation_profile_version: number | null;
+  latest_evaluation_posting_revision_id: string | null;
+  latest_evaluation_rubric_version: string | null;
+  latest_evaluation_score: string | number | null;
+  latest_evaluation_score_json: EvaluationComputation | null;
+  latest_evaluation_gaps_json: string[] | null;
+  latest_evaluation_source_refs: Record<string, unknown> | null;
+  latest_evaluation_model: string | null;
+  latest_evaluation_status: string | null;
+  latest_evaluation_created_at: Date | null;
 }
 
 export interface JobDetail {
@@ -89,7 +103,20 @@ const JOB_SELECT = `
          r.provenance,
          r.retrieved_at AS revision_retrieved_at,
          (SELECT count(*)::int FROM job_listings jl WHERE jl.job_id = j.id)
-           AS listing_count
+           AS listing_count,
+         cp.version AS current_profile_version,
+         latest_eval.id AS latest_evaluation_id,
+         latest_eval.evaluation_version AS latest_evaluation_version,
+         latest_eval.profile_version AS latest_evaluation_profile_version,
+         latest_eval.posting_revision_id AS latest_evaluation_posting_revision_id,
+         latest_eval.rubric_version AS latest_evaluation_rubric_version,
+         latest_eval.score AS latest_evaluation_score,
+         latest_eval.score_json AS latest_evaluation_score_json,
+         latest_eval.gaps_json AS latest_evaluation_gaps_json,
+         latest_eval.source_refs AS latest_evaluation_source_refs,
+         latest_eval.model AS latest_evaluation_model,
+         latest_eval.status AS latest_evaluation_status,
+         latest_eval.created_at AS latest_evaluation_created_at
     FROM jobs j
     JOIN LATERAL (
       SELECT * FROM job_listings
@@ -99,6 +126,14 @@ const JOB_SELECT = `
     ) l ON true
     JOIN sources s ON s.id = l.source_id
     LEFT JOIN posting_revisions r ON r.id = l.current_revision_id
+    LEFT JOIN candidate_profiles cp ON cp.owner_id = j.owner_id
+    LEFT JOIN LATERAL (
+      SELECT me.*
+        FROM match_evaluations me
+       WHERE me.owner_id = j.owner_id AND me.job_id = j.id
+       ORDER BY me.evaluation_version DESC
+       LIMIT 1
+    ) latest_eval ON true
 `;
 
 export async function listJobs(ownerId: string, filters: JobFilters = {}): Promise<JobListRow[]> {

@@ -48,6 +48,10 @@ export async function runDocumentPurge(
   await withTransaction(async (client) => {
     if (document) {
       await client.query(
+        'SELECT id FROM candidate_profiles WHERE owner_id = $1 FOR UPDATE',
+        [ownerId],
+      );
+      await client.query(
         `UPDATE documents
             SET status = 'deleted', updated_at = now()
           WHERE id = $1`,
@@ -55,7 +59,7 @@ export async function runDocumentPurge(
       );
 
       // Facts supported only by this document are no longer backed by evidence.
-      await client.query(
+      const retractedFacts = await client.query(
         `UPDATE profile_facts f
             SET verification_status = 'retracted', updated_at = now()
           WHERE f.owner_id = $1
@@ -71,6 +75,12 @@ export async function runDocumentPurge(
             )`,
         [ownerId, document.id],
       );
+      if ((retractedFacts.rowCount ?? 0) > 0) {
+        await client.query(
+          'UPDATE candidate_profiles SET version = version + 1, updated_at = now() WHERE owner_id = $1',
+          [ownerId],
+        );
+      }
     }
 
     await client.query(

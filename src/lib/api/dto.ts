@@ -18,6 +18,7 @@ import type {
   JobListRow,
   JobRow,
 } from '@/lib/jobs/service';
+import type { MatchEvaluationRow } from '@/lib/evaluations/service';
 import type { FactRow, ProfileWithTimezone } from '@/lib/profile/service';
 import { apiErrors } from '@/lib/http/errors';
 
@@ -137,6 +138,56 @@ export function jobListDto(row: JobListRow) {
       revisionId: row.revision_id,
       count: row.listing_count,
     },
+    latestEvaluation: row.latest_evaluation_id
+      ? {
+          id: row.latest_evaluation_id,
+          evaluationVersion: row.latest_evaluation_version!,
+          profileVersion: row.latest_evaluation_profile_version!,
+          postingRevisionId: row.latest_evaluation_posting_revision_id,
+          rubricVersion: row.latest_evaluation_rubric_version!,
+          status: row.latest_evaluation_status as MatchEvaluationRow['status'],
+          score: row.latest_evaluation_score === null
+            ? null
+            : Number(row.latest_evaluation_score),
+          decision: row.latest_evaluation_score_json?.decision ?? 'review',
+          dimensions: row.latest_evaluation_score_json?.dimensions ?? [],
+          hardFilters: row.latest_evaluation_score_json?.hardFilters ?? [],
+          matches: row.latest_evaluation_score_json?.matches ?? [],
+          gaps: row.latest_evaluation_gaps_json ?? [],
+          unknowns: row.latest_evaluation_score_json?.unknowns ?? [],
+          vetoes: row.latest_evaluation_score_json?.vetoes ?? [],
+          sourceRefs: row.latest_evaluation_source_refs ?? {},
+          model: row.latest_evaluation_model,
+          createdAt: row.latest_evaluation_created_at?.toISOString() ?? null,
+          isCurrent:
+            row.current_profile_version !== null &&
+            row.latest_evaluation_profile_version === row.current_profile_version &&
+            row.latest_evaluation_posting_revision_id === row.revision_id,
+        }
+      : null,
+  };
+}
+
+export function evaluationDto(row: MatchEvaluationRow) {
+  return {
+    id: row.id,
+    jobId: row.job_id,
+    evaluationVersion: row.evaluation_version,
+    profileVersion: row.profile_version,
+    postingRevisionId: row.posting_revision_id,
+    rubricVersion: row.rubric_version,
+    status: row.status,
+    score: row.score === null ? null : Number(row.score),
+    decision: row.score_json.decision,
+    dimensions: row.score_json.dimensions,
+    hardFilters: row.score_json.hardFilters,
+    matches: row.score_json.matches,
+    gaps: row.gaps_json,
+    unknowns: row.score_json.unknowns,
+    vetoes: row.score_json.vetoes,
+    sourceRefs: row.source_refs,
+    model: row.model,
+    createdAt: row.created_at.toISOString(),
   };
 }
 

@@ -212,6 +212,10 @@ export async function createFact(
 ): Promise<FactRow> {
   await ensureProfile(ownerId);
   return withTransaction(async (client) => {
+    await client.query(
+      'SELECT id FROM candidate_profiles WHERE owner_id = $1 FOR UPDATE',
+      [ownerId],
+    );
     await assertSourceDocument(client, ownerId, input.sourceDocumentId ?? null);
 
     const fact = await client.query<{ id: string }>(
@@ -241,6 +245,10 @@ export async function createFact(
           SET current_version_id = $2, verification_status = $3, updated_at = now()
         WHERE id = $1`,
       [factId, version.rows[0]!.id, status],
+    );
+    await client.query(
+      'UPDATE candidate_profiles SET version = version + 1, updated_at = now() WHERE owner_id = $1',
+      [ownerId],
     );
 
     await recordAudit(client, {
@@ -273,6 +281,10 @@ export async function updateFact(
   requestId?: string,
 ): Promise<FactRow> {
   return withTransaction(async (client) => {
+    await client.query(
+      'SELECT id FROM candidate_profiles WHERE owner_id = $1 FOR UPDATE',
+      [ownerId],
+    );
     const locked = await client.query<FactRow>(
       `${FACT_SELECT}
         WHERE f.id = $1 AND f.owner_id = $2
@@ -352,6 +364,11 @@ export async function updateFact(
         );
       }
     }
+
+    await client.query(
+      'UPDATE candidate_profiles SET version = version + 1, updated_at = now() WHERE owner_id = $1',
+      [ownerId],
+    );
 
     await recordAudit(client, {
       ownerId,
