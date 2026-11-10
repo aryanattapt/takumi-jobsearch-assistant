@@ -47,12 +47,26 @@ interface ReservationRow {
   state: 'reserved' | 'consumed' | 'released';
 }
 
-export interface QuotaReservationResult {
-  reservationId: string;
-  state: 'reserved';
-  localDate: string;
-  timezone: string;
-}
+export type ApprovalBlockReason =
+  | 'APPROVAL_EXPIRED'
+  | 'APPROVAL_REVOKED'
+  | 'APPROVAL_STALE'
+  | 'APPROVAL_TARGET_MISMATCH';
+
+export type QuotaReservationResult =
+  | {
+      reservationId: string;
+      state: 'reserved';
+      localDate: string;
+      timezone: string;
+    }
+  | {
+      reservationId: null;
+      state: 'not_submitted';
+      localDate: string;
+      timezone: string;
+      reason: ApprovalBlockReason;
+    };
 
 export interface DispatchIntentResult {
   attemptId: string;
@@ -60,7 +74,7 @@ export interface DispatchIntentResult {
   state: 'submitting' | 'not_submitted';
   intentRecorded: boolean;
   localDate: string | null;
-  reason: 'QUOTA_EXCEEDED' | null;
+  reason: 'QUOTA_EXCEEDED' | ApprovalBlockReason | null;
   dispatchIntentAt: Date | null;
 }
 
@@ -354,6 +368,110 @@ async function releaseReservation(
   );
 }
 
+async function stopForApprovalBlock(
+  client: PoolClient,
+  input: {
+    ownerId: string;
+    applicationId: string;
+    attemptId: string;
+    actorType: 'system' | 'worker';
+    actorId: string;
+  },
+  application: { submission_status: string },
+  attempt: AttemptContext,
+  reason: ApprovalBlockReason,
+  timezone: string,
+  now: Date,
+): Promise<{ attemptVersion: number; localDate: string; reason: ApprovalBlockReason }> {
+  if (
+    attempt.dispatch_intent_at ||
+    !['reserved', 'running'].includes(attempt.state) ||
+    !['approved', 'submitting'].includes(application.submission_status)
+  ) {
+    throw conflict('ATTEMPT_STATE_CONFLICT', 'Only a pre-intent submission can be stopped');
+  }
+
+  const reservation = await lockReservation(client, input.attemptId);
+  if (reservation?.state === 'consumed') {
+    throw conflict('DISPATCH_ALREADY_INTENDED', 'A consumed reservation cannot be released before reconciliation');
+  }
+  const reservationReleased = reservation?.state === 'reserved';
+  if (reservationReleased && reservation) await releaseReservation(client, reservation);
+  if (attempt.approval_id) {
+    await client.query(
+      `UPDATE approvals
+          SET revoked_at = COALESCE(revoked_at, $3)
+        WHERE id = $1 AND owner_id = $2`,
+      [attempt.approval_id, input.ownerId, now],
+    );
+  }
+
+  const attemptUpdate = await client.query<{ version: number }>(
+    `UPDATE application_attempts
+        SET state = 'not_submitted', error_code = $3,
+            finished_at = $4, version = version + 1, updated_at = $4
+      WHERE id = $1 AND owner_id = $2 AND dispatch_intent_at IS NULL
+        AND state IN ('reserved', 'running')
+      RETURNING version`,
+    [input.attemptId, input.ownerId, reason, now],
+  );
+  const applicationUpdate = await client.query<{ current_version: number }>(
+    `UPDATE applications
+        SET submission_status = 'not_submitted', current_version = current_version + 1,
+            updated_at = $3
+      WHERE id = $1 AND owner_id = $2 AND submission_status IN ('approved', 'submitting')
+      RETURNING current_version`,
+    [input.applicationId, input.ownerId, now],
+  );
+  if (attemptUpdate.rowCount !== 1 || applicationUpdate.rowCount !== 1) {
+    throw apiErrors.internal();
+  }
+
+  const reasonCode = reason.toLowerCase();
+  await client.query(
+    `INSERT INTO application_events
+       (application_id, attempt_id, event_type, from_state, to_state,
+        actor_type, actor_id, reason_code, occurred_at)
+     VALUES ($1, $2, 'application.dispatch.blocked', $3, 'not_submitted',
+             $4, $5, $6, $7)`,
+    [input.applicationId, input.attemptId, attempt.state, input.actorType, input.actorId, reasonCode, now],
+  );
+  await recordAudit(client, {
+    ownerId: input.ownerId,
+    actorType: input.actorType,
+    actorId: input.actorId,
+    action: 'application.dispatch.blocked',
+    entityType: 'application_attempt',
+    entityId: input.attemptId,
+    result: 'denied',
+    details: {
+      applicationId: input.applicationId,
+      reason: reasonCode,
+      reservationReleased,
+      applicationVersion: applicationUpdate.rows[0]!.current_version,
+    },
+  });
+
+  return {
+    attemptVersion: attemptUpdate.rows[0]!.version,
+    localDate: localDateAt(now, timezone),
+    reason,
+  };
+}
+
+function getApprovalBlockReason(error: unknown): ApprovalBlockReason | null {
+  if (!(error instanceof ApiError)) return null;
+  switch (error.code) {
+    case 'APPROVAL_EXPIRED':
+    case 'APPROVAL_REVOKED':
+    case 'APPROVAL_STALE':
+    case 'APPROVAL_TARGET_MISMATCH':
+      return error.code;
+    default:
+      return null;
+  }
+}
+
 export async function reserveAttemptQuota(
   ownerId: string,
   applicationId: string,
@@ -398,16 +516,37 @@ export async function reserveAttemptQuota(
       throw conflict('APPLICATION_STATE_CONFLICT', 'Application is not approved for a new submission attempt');
     }
 
-    const snapshotId = await lockApproval(client, ownerId, applicationId, attempt, now, false);
-    const snapshot = await assertDispatchApprovalCurrent(
-      client,
-      ownerId,
-      applicationId,
-      snapshotId,
-      now,
-    );
-    if (snapshot.listingId !== attempt.listing_id || snapshot.targetKey !== attempt.target_key) {
-      throw conflict('APPROVAL_TARGET_MISMATCH', 'Attempt target does not match the approved preflight snapshot');
+    try {
+      const snapshotId = await lockApproval(client, ownerId, applicationId, attempt, now, false);
+      const snapshot = await assertDispatchApprovalCurrent(
+        client,
+        ownerId,
+        applicationId,
+        snapshotId,
+        now,
+      );
+      if (snapshot.listingId !== attempt.listing_id || snapshot.targetKey !== attempt.target_key) {
+        throw conflict('APPROVAL_TARGET_MISMATCH', 'Attempt target does not match the approved preflight snapshot');
+      }
+    } catch (error) {
+      const reason = getApprovalBlockReason(error);
+      if (!reason) throw error;
+      const stopped = await stopForApprovalBlock(
+        client,
+        { ownerId, applicationId, attemptId, actorType: 'system', actorId: 'quota' },
+        application,
+        attempt,
+        reason,
+        settings.quota_timezone,
+        now,
+      );
+      return {
+        reservationId: null,
+        state: 'not_submitted',
+        localDate: stopped.localDate,
+        timezone: settings.quota_timezone,
+        reason: stopped.reason,
+      };
     }
     const linkedAttempt = await client.query<{ exists: boolean }>(
       `SELECT EXISTS (
@@ -513,16 +652,51 @@ export async function recordDispatchIntent(input: {
     }
     const sourceCode = assertDispatchSource(attempt, settings);
     await assertNoRecoveryHold(client, input.ownerId, sourceCode, attempt.target_key!);
-    const snapshotId = await lockApproval(client, input.ownerId, input.applicationId, attempt, now, true);
-    const snapshot = await assertDispatchApprovalCurrent(
-      client,
-      input.ownerId,
-      input.applicationId,
-      snapshotId,
-      now,
-    );
-    if (snapshot.listingId !== attempt.listing_id || snapshot.targetKey !== attempt.target_key) {
-      throw conflict('APPROVAL_TARGET_MISMATCH', 'Attempt target does not match the approved preflight snapshot');
+    try {
+      const snapshotId = await lockApproval(
+        client,
+        input.ownerId,
+        input.applicationId,
+        attempt,
+        now,
+        true,
+      );
+      const snapshot = await assertDispatchApprovalCurrent(
+        client,
+        input.ownerId,
+        input.applicationId,
+        snapshotId,
+        now,
+      );
+      if (snapshot.listingId !== attempt.listing_id || snapshot.targetKey !== attempt.target_key) {
+        throw conflict('APPROVAL_TARGET_MISMATCH', 'Attempt target does not match the approved preflight snapshot');
+      }
+    } catch (error) {
+      const reason = getApprovalBlockReason(error);
+      if (!reason) throw error;
+      return stopForApprovalBlock(
+        client,
+        {
+          ownerId: input.ownerId,
+          applicationId: input.applicationId,
+          attemptId: input.attemptId,
+          actorType: 'worker',
+          actorId: input.dispatchOwner,
+        },
+        application,
+        attempt,
+        reason,
+        settings.quota_timezone,
+        now,
+      ).then((stopped) => ({
+        attemptId: input.attemptId,
+        attemptVersion: stopped.attemptVersion,
+        state: 'not_submitted' as const,
+        intentRecorded: false,
+        localDate: stopped.localDate,
+        reason: stopped.reason,
+        dispatchIntentAt: null,
+      }));
     }
 
     const reservation = await lockReservation(client, input.attemptId);

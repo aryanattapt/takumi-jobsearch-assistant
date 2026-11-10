@@ -116,7 +116,7 @@ Requirement traceability (Phase 3 slices):
 | Epic | Status | What exists |
 |---|---|---|
 | E10 Browser | Partial, local fixture plus JobStreet manual handoff | `local-dummy-v1` defines a synthetic form fingerprint. Preflight snapshots bind the application version, listing revision, latest documents, encrypted-answer hashes, and current verification state. A JobStreet reference can be opened only by an owner click, and a manual submission can retain an optional confirmation reference. No page fetch, browser profile, cookies, login, OTP/CAPTCHA handling, form fill, or network adapter exists. |
-| E11 Submit | Partial, gated quota and lifecycle services | One active owner approval is version-bound and revalidated against current facts, documents, answers, and posting immediately before reservation and intent. Reservation atomically consumes approval, records global/source quota, and moves the application to `submitting`; intent rechecks current local-day limits and snapshot, then consumes quota. Pre-intent cancellation releases quota and revokes approval; cancellation and intent serialize on the owner submission control. Recovery holds are owner-visible and block intent. Dry-run remains `simulated` with no task/quota side effects. Browser enablement stays fail-closed. Attempt creation, portal dispatch, evidence, and reconciliation are not implemented. |
+| E11 Submit | Partial, gated quota and lifecycle services | One active owner approval is version-bound and revalidated against current facts, documents, answers, and posting immediately before reservation and intent. Reservation atomically consumes approval, records global/source quota, and moves the application to `submitting`; intent rechecks current local-day limits and snapshot, then consumes quota. Pre-intent cancellation releases quota and revokes approval; an expired, revoked, stale, or mismatched approval before intent now revokes the approval, releases any active reservation, and moves the attempt/application to `not_submitted`. Cancellation and intent serialize on the owner submission control. Recovery holds are owner-visible and block intent. Dry-run remains `simulated` with no task/quota side effects. Browser enablement stays fail-closed. Attempt creation, portal dispatch, evidence, and reconciliation are not implemented. |
 
 Verification (local, 2026-11-10):
 
@@ -140,6 +140,9 @@ Verification (local, 2026-11-10):
 - These are local fixture and policy-configuration checks, not live portal UAT.
   JobStreet is selected only for manual handoff; automated access, dispatch,
   portal evidence, and reconciliation are not qualified.
+- Phase 4 follow-up (2026-11-10): `npm run lint`, `npm run typecheck`, and
+  `npm run build` pass after adding pre-intent cleanup for invalid approvals.
+  Tests were not run after this change; UAT-50 regression coverage remains open.
 
 Requirement traceability (Phase 4 implemented slices):
 
@@ -151,7 +154,7 @@ Requirement traceability (Phase 4 implemented slices):
 | UAT-41 (partial) | Active recovery holds can be listed with scope/checkpoint metadata for the owner; evidence-based resolution and restored-history verification are not implemented. |
 | BR-12 / UAT-37 (manual path) | A manual submission can store an optional owner-provided confirmation reference; it is not fetched or validated and the result remains labelled owner-reported/manual. |
 | UAT-45–46 (partial) | Integration tests cover available/full quota at local midnight and same-day limit reductions before intent. Broader clock, timezone-change, and live worker scenarios remain untested. |
-| UAT-50 (partial) | Cancellation racing with intent has one transactional winner; expired-approval queue handling and portal outcomes after intent are not implemented. |
+| UAT-50 (partial) | Cancellation and intent serialize on the owner control. Invalid approval before intent now terminates as `not_submitted` and releases quota; regression coverage and portal outcomes after intent remain open. |
 | PR-15 / UAT-54 (partial) | Preflight and dry-run create owner audit events with IDs/counts and no answer/CV payloads. |
 | UAT-19–22, UAT-28–30, UAT-42–44, UAT-47–49 | Not implemented: live dispatch lifecycle, portal race-stop, evidence/reconciliation, cross-listing target identity, and restore-loss recovery. |
 
@@ -174,7 +177,7 @@ signed off by the owner.
 
 ## Not started yet
 
-- Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, portal evidence/reconciliation, evidence-based recovery-hold resolution, cross-listing target identity, restore-loss recovery, and owner live UAT. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
+- Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, portal evidence/reconciliation, evidence-based recovery-hold resolution, cross-listing target identity, restore-loss recovery, regression coverage for invalid-approval cleanup, and owner live UAT. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
 - Phase 5/6: additional adapters, schedules UI, notifications, Gmail/Notion.
 - Additional provider adapters (Gemini and native Anthropic), live provider credentials, production deployment, and external ATS/client compatibility checks.
 - Owner confirmation of the proposed ranking rubric, live end-to-end/UAT sign-off, and isolated backup restore drill.
