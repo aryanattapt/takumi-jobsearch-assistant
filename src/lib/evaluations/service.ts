@@ -1,4 +1,3 @@
-import type { PoolClient } from 'pg';
 import { recordAudit } from '@/lib/audit';
 import { query, withTransaction } from '@/lib/db/pool';
 import { apiErrors } from '@/lib/http/errors';
