@@ -410,18 +410,46 @@ export async function recordManualSubmission(
     }
     const documentVersionIds = [...new Set(input.documentVersionIds)];
     if (documentVersionIds.length > 0) {
-      const found = await client.query<{ count: number }>(
-        `SELECT count(*)::int AS count
+      const found = await client.query<{
+        id: string;
+        generated: boolean;
+        reviewed_at: Date | null;
+        version_no: number | null;
+        latest_version_no: number | null;
+      }>(
+        `SELECT dv.id,
+                adv.id IS NOT NULL AS generated,
+                adv.reviewed_at,
+                adv.version_no,
+                (SELECT max(latest.version_no)::int
+                   FROM application_document_versions latest
+                  WHERE latest.owner_id = $1 AND latest.application_id = $2
+                    AND latest.kind = adv.kind) AS latest_version_no
            FROM document_versions dv
            JOIN documents d ON d.id = dv.document_id
+           LEFT JOIN application_document_versions adv
+             ON adv.document_version_id = dv.id
+            AND adv.owner_id = $1 AND adv.application_id = $2
           WHERE dv.owner_id = $1 AND dv.application_id = $2
             AND d.status = 'active' AND dv.id = ANY($3::uuid[])`,
         [ownerId, applicationId, documentVersionIds],
       );
-      if ((found.rows[0]?.count ?? 0) !== documentVersionIds.length) {
+      if (found.rows.length !== documentVersionIds.length) {
         throw apiErrors.validation({
           field: 'documentVersionIds',
           message: 'Every document version must belong to the owner',
+        });
+      }
+      if (found.rows.some((row) => row.generated && row.reviewed_at === null)) {
+        throw apiErrors.validation({
+          field: 'documentVersionIds',
+          message: 'Generated application documents must be reviewed before recording submission',
+        });
+      }
+      if (found.rows.some((row) => row.generated && row.version_no !== row.latest_version_no)) {
+        throw apiErrors.validation({
+          field: 'documentVersionIds',
+          message: 'Only the latest version of each generated application document can be recorded',
         });
       }
     }

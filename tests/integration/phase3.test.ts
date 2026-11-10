@@ -133,6 +133,13 @@ describe('Phase 3 workflow', () => {
     expect(first.source_fact_version_ids).toEqual([fact.current_version_id]);
     const downloaded = await downloadDocument(owner.ownerId, first.document_id);
     expect(downloaded.buffer.subarray(0, 5).toString('ascii')).toBe('%PDF-');
+    await expect(recordManualSubmission(owner.ownerId, application.id, {
+      listingId: job.listingId,
+      submittedAt: new Date('2026-11-10T10:00:00.000Z'),
+      documentVersionsKnown: true,
+      documentVersionIds: [first.document_version_id],
+      expectedVersion: 2,
+    })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
 
     const reviewed = await markApplicationDocumentReviewed(owner.ownerId, application.id, first.id);
     expect(reviewed.reviewed_at).toBeInstanceOf(Date);
@@ -145,6 +152,14 @@ describe('Phase 3 workflow', () => {
     await expect(updateApplicationDocumentDraft(owner.ownerId, application.id, first.id, {
       content: 'Stale version', expectedVersionNo: 1,
     })).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+
+    await expect(recordManualSubmission(owner.ownerId, application.id, {
+      listingId: job.listingId,
+      submittedAt: new Date('2026-11-10T10:00:00.000Z'),
+      documentVersionsKnown: true,
+      documentVersionIds: [first.document_version_id],
+      expectedVersion: 4,
+    })).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
 
     const secondReviewed = await markApplicationDocumentReviewed(owner.ownerId, application.id, second.id);
     expect(secondReviewed.reviewed_at).toBeInstanceOf(Date);
