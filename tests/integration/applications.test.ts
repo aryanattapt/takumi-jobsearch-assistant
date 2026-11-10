@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getPool } from '@/lib/db/pool';
 import { uploadDocument } from '@/lib/documents/service';
+import { cancelApplication } from '@/lib/submissions/quota';
 import {
   createApplication,
   getApplication,
@@ -119,6 +120,30 @@ describe('application tracker and manual submission', () => {
       from_state: 'not_submitted',
       to_state: 'ready_for_review',
       actor_type: 'owner',
+    });
+  });
+
+  it('cancels an application without an active attempt using its expected version', async () => {
+    const owner = await createTestOwner();
+    const { jobId } = await createJob(owner.ownerId, 'Application to cancel');
+    const { application } = await createApplication(owner.ownerId, jobId);
+
+    await expect(cancelApplication({
+      ownerId: owner.ownerId,
+      applicationId: application.id,
+      expectedVersion: 2,
+    })).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+
+    const cancelled = await cancelApplication({
+      ownerId: owner.ownerId,
+      applicationId: application.id,
+      expectedVersion: application.current_version,
+    });
+    expect(cancelled).toMatchObject({
+      applicationId: application.id,
+      applicationVersion: 2,
+      state: 'cancelled',
+      cancelledAttempt: null,
     });
   });
 

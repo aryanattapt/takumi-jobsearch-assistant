@@ -73,6 +73,13 @@ export interface CancelAttemptResult {
   reservationReleased: boolean;
 }
 
+export interface CancelApplicationResult {
+  applicationId: string;
+  applicationVersion: number;
+  state: 'cancelled';
+  cancelledAttempt: CancelAttemptResult | null;
+}
+
 function conflict(code: string, message: string): ApiError {
   return new ApiError(409, code, message);
 }
@@ -676,6 +683,82 @@ async function markQuotaDenied(
   };
 }
 
+async function cancelLockedAttempt(
+  client: PoolClient,
+  input: {
+    ownerId: string;
+    applicationId: string;
+    requestId?: string;
+    expectedAttemptVersion?: number;
+  },
+  application: { submission_status: string },
+  attempt: AttemptContext,
+): Promise<CancelAttemptResult> {
+  if (attempt.dispatch_intent_at || ['submitting', 'submit_unknown', 'submitted_confirmed'].includes(attempt.state)) {
+    throw conflict('DISPATCH_ALREADY_INTENDED', 'An attempt cannot be cancelled after dispatch intent');
+  }
+  if (input.expectedAttemptVersion !== undefined && attempt.version !== input.expectedAttemptVersion) {
+    throw apiErrors.versionConflict();
+  }
+  if (!['approved', 'submitting'].includes(application.submission_status)) {
+    throw conflict('APPLICATION_STATE_CONFLICT', 'Application is not in an active submission state');
+  }
+  if (attempt.mode !== 'review_before_submit' || !['reserved', 'running'].includes(attempt.state)) {
+    throw conflict('ATTEMPT_STATE_CONFLICT', 'Attempt is not cancellable before dispatch');
+  }
+  const reservation = await lockReservation(client, attempt.id);
+  const reservationReleased = Boolean(reservation?.state === 'reserved');
+  if (reservationReleased && reservation) await releaseReservation(client, reservation);
+  await client.query(
+    `UPDATE approvals SET revoked_at = COALESCE(revoked_at, now())
+      WHERE id = $1 AND owner_id = $2`,
+    [attempt.approval_id, input.ownerId],
+  );
+
+  const attemptUpdate = await client.query<{ version: number }>(
+    `UPDATE application_attempts
+        SET state = 'cancelled', finished_at = now(), version = version + 1, updated_at = now()
+      WHERE id = $1
+      RETURNING version`,
+    [attempt.id],
+  );
+  const applicationUpdate = await client.query<{ current_version: number }>(
+    `UPDATE applications
+        SET submission_status = 'cancelled', current_version = current_version + 1,
+            updated_at = now()
+      WHERE id = $1 AND owner_id = $2
+      RETURNING current_version`,
+    [input.applicationId, input.ownerId],
+  );
+  await client.query(
+    `INSERT INTO application_events
+       (application_id, attempt_id, event_type, from_state, to_state,
+        actor_type, actor_id, reason_code)
+     VALUES ($1, $2, 'application.attempt.cancelled', $3, 'cancelled', 'owner', $4, $5)`,
+    [input.applicationId, attempt.id, attempt.state, input.ownerId,
+      reservationReleased ? 'quota_released_before_intent' : 'cancelled_before_reservation'],
+  );
+  await recordAudit(client, {
+    ownerId: input.ownerId,
+    actorType: 'owner',
+    actorId: input.ownerId,
+    action: 'application.attempt.cancelled',
+    entityType: 'application_attempt',
+    entityId: attempt.id,
+    result: 'success',
+    requestId: input.requestId ?? null,
+    details: { applicationId: input.applicationId, reservationReleased },
+  });
+  return {
+    attemptId: attempt.id,
+    applicationId: input.applicationId,
+    attemptVersion: attemptUpdate.rows[0]!.version,
+    applicationVersion: applicationUpdate.rows[0]!.current_version,
+    state: 'cancelled',
+    reservationReleased,
+  };
+}
+
 export async function cancelReservedAttempt(input: {
   ownerId: string;
   applicationId: string;
@@ -687,33 +770,60 @@ export async function cancelReservedAttempt(input: {
     await lockSettings(client, input.ownerId);
     const application = await lockApplication(client, input.ownerId, input.applicationId);
     const attempt = await lockAttempt(client, input.ownerId, input.applicationId, input.attemptId);
-    if (attempt.dispatch_intent_at || ['submitting', 'submit_unknown', 'submitted_confirmed'].includes(attempt.state)) {
-      throw conflict('DISPATCH_ALREADY_INTENDED', 'An attempt cannot be cancelled after dispatch intent');
+    return cancelLockedAttempt(client, input, application, attempt);
+  });
+}
+
+export async function cancelApplication(input: {
+  ownerId: string;
+  applicationId: string;
+  expectedVersion: number;
+  requestId?: string;
+}): Promise<CancelApplicationResult> {
+  return withTransaction(async (client) => {
+    await lockSettings(client, input.ownerId);
+    const application = await lockApplication(client, input.ownerId, input.applicationId);
+    if (application.current_version !== input.expectedVersion) throw apiErrors.versionConflict();
+
+    const active = await client.query<{ id: string }>(
+      `SELECT id FROM application_attempts
+        WHERE owner_id = $1 AND application_id = $2
+          AND state IN ('reserved', 'running', 'submitting')
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1 FOR UPDATE`,
+      [input.ownerId, input.applicationId],
+    );
+    if (active.rows[0]) {
+      const attempt = await lockAttempt(client, input.ownerId, input.applicationId, active.rows[0].id);
+      const cancelledAttempt = await cancelLockedAttempt(client, input, application, attempt);
+      return {
+        applicationId: input.applicationId,
+        applicationVersion: cancelledAttempt.applicationVersion,
+        state: 'cancelled',
+        cancelledAttempt,
+      };
     }
-    if (attempt.version !== input.expectedAttemptVersion) throw apiErrors.versionConflict();
-    if (!['approved', 'submitting'].includes(application.submission_status)) {
-      throw conflict('APPLICATION_STATE_CONFLICT', 'Application is not in an active submission state');
+
+    if (!['draft', 'ready_for_review', 'approved', 'not_submitted'].includes(application.submission_status)) {
+      throw conflict('APPLICATION_STATE_CONFLICT', 'Application cannot be cancelled from its current state');
     }
-    if (attempt.mode !== 'review_before_submit' || !['reserved', 'running'].includes(attempt.state)) {
-      throw conflict('ATTEMPT_STATE_CONFLICT', 'Attempt is not cancellable before dispatch');
+    const unresolved = await client.query<{ id: string; state: string }>(
+      `SELECT id, state FROM application_attempts
+        WHERE owner_id = $1 AND application_id = $2
+          AND state IN ('submit_unknown', 'submitted_confirmed')
+        ORDER BY id LIMIT 1 FOR SHARE`,
+      [input.ownerId, input.applicationId],
+    );
+    if (unresolved.rows[0]) {
+      throw conflict('TARGET_REQUIRES_RECONCILIATION', 'Reconcile an unknown or confirmed attempt before cancellation');
     }
-    const reservation = await lockReservation(client, input.attemptId);
-    const reservationReleased = Boolean(reservation?.state === 'reserved');
-    if (reservationReleased && reservation) await releaseReservation(client, reservation);
+
     await client.query(
       `UPDATE approvals SET revoked_at = COALESCE(revoked_at, now())
-        WHERE id = $1 AND owner_id = $2`,
-      [attempt.approval_id, input.ownerId],
+        WHERE owner_id = $1 AND application_id = $2 AND revoked_at IS NULL`,
+      [input.ownerId, input.applicationId],
     );
-
-    const attemptUpdate = await client.query<{ version: number }>(
-      `UPDATE application_attempts
-          SET state = 'cancelled', finished_at = now(), version = version + 1, updated_at = now()
-        WHERE id = $1
-        RETURNING version`,
-      [input.attemptId],
-    );
-    const applicationUpdate = await client.query<{ current_version: number }>(
+    const updated = await client.query<{ current_version: number }>(
       `UPDATE applications
           SET submission_status = 'cancelled', current_version = current_version + 1,
               updated_at = now()
@@ -723,30 +833,26 @@ export async function cancelReservedAttempt(input: {
     );
     await client.query(
       `INSERT INTO application_events
-         (application_id, attempt_id, event_type, from_state, to_state,
-          actor_type, actor_id, reason_code)
-       VALUES ($1, $2, 'application.attempt.cancelled', $3, 'cancelled', 'owner', $4, $5)`,
-      [input.applicationId, input.attemptId, attempt.state, input.ownerId,
-        reservationReleased ? 'quota_released_before_intent' : 'cancelled_before_reservation'],
+         (application_id, event_type, from_state, to_state, actor_type, actor_id, reason_code)
+       VALUES ($1, 'application.cancelled', $2, 'cancelled', 'owner', $3, 'owner_cancelled')`,
+      [input.applicationId, application.submission_status, input.ownerId],
     );
     await recordAudit(client, {
       ownerId: input.ownerId,
       actorType: 'owner',
       actorId: input.ownerId,
-      action: 'application.attempt.cancelled',
-      entityType: 'application_attempt',
-      entityId: input.attemptId,
+      action: 'application.cancelled',
+      entityType: 'application',
+      entityId: input.applicationId,
       result: 'success',
       requestId: input.requestId ?? null,
-      details: { applicationId: input.applicationId, reservationReleased },
+      details: { fromStatus: application.submission_status, version: updated.rows[0]!.current_version },
     });
     return {
-      attemptId: input.attemptId,
       applicationId: input.applicationId,
-      attemptVersion: attemptUpdate.rows[0]!.version,
-      applicationVersion: applicationUpdate.rows[0]!.current_version,
+      applicationVersion: updated.rows[0]!.current_version,
       state: 'cancelled',
-      reservationReleased,
+      cancelledAttempt: null,
     };
   });
 }

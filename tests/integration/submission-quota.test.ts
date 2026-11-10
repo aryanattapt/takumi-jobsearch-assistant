@@ -4,6 +4,7 @@ import { encryptSecret } from '@/lib/crypto/secrets';
 import { createApplication } from '@/lib/applications/service';
 import { approveLocalPreflight, createLocalPreflight } from '@/lib/submissions/service';
 import {
+  cancelApplication,
   cancelReservedAttempt,
   recordDispatchIntent,
   reserveAttemptQuota,
@@ -353,13 +354,15 @@ describe('submission quota reservation and dispatch intent', () => {
     const owner = await createTestOwner();
     const cancelled = await createAttempt(owner.ownerId, 'e');
     await reserveAttemptQuota(owner.ownerId, cancelled.applicationId, cancelled.attemptId, BEFORE_MIDNIGHT);
-    const cancelledResult = await cancelReservedAttempt({
+    const cancelledResult = await cancelApplication({
       ownerId: owner.ownerId,
       applicationId: cancelled.applicationId,
-      attemptId: cancelled.attemptId,
-      expectedAttemptVersion: 1,
+      expectedVersion: 4,
     });
-    expect(cancelledResult).toMatchObject({ state: 'cancelled', reservationReleased: true });
+    expect(cancelledResult).toMatchObject({
+      state: 'cancelled',
+      cancelledAttempt: { attemptId: cancelled.attemptId, reservationReleased: true },
+    });
 
     const sent = await createAttempt(owner.ownerId, 'f');
     await getPool().query(

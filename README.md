@@ -170,7 +170,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | AI provider/review | `GET/PUT/POST /api/v1/ai/provider`, `GET/POST /api/v1/jobs/{id}/ai-reviews` |
 | Duplicates | `GET /api/v1/duplicate-suggestions`, `POST /api/v1/duplicate-suggestions/{id}/resolve` |
 | Applications | `GET/POST /api/v1/applications`, `GET/PATCH /api/v1/applications/{id}` |
-| Application lifecycle | `POST /api/v1/applications/{id}/reopen` (cancelled → draft, not_submitted → ready_for_review) |
+| Application lifecycle | `POST /api/v1/applications/{id}/cancel`, `POST /api/v1/applications/{id}/reopen` (cancelled → draft, not_submitted → ready_for_review) |
 | Tracker | `POST /api/v1/applications/{id}/manual-submissions`, `PATCH /api/v1/applications/{id}/recruitment-stage`, `GET /api/v1/applications/{id}/events` |
 | Answer bank | `GET/POST /api/v1/answer-bank`, `PATCH /api/v1/answer-bank/{id}`, `POST /api/v1/answer-bank/suggest` |
 | Application drafts | `GET/POST /api/v1/applications/{id}/answers`, `GET/POST /api/v1/applications/{id}/documents`, `PATCH /api/v1/applications/{id}/documents/{versionId}`, `POST /api/v1/applications/{id}/documents/{versionId}/review` |
