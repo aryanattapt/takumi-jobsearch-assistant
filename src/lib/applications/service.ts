@@ -412,9 +412,11 @@ export async function recordManualSubmission(
     if (documentVersionIds.length > 0) {
       const found = await client.query<{ count: number }>(
         `SELECT count(*)::int AS count
-           FROM document_versions
-          WHERE owner_id = $1 AND id = ANY($2::uuid[])`,
-        [ownerId, documentVersionIds],
+           FROM document_versions dv
+           JOIN documents d ON d.id = dv.document_id
+          WHERE dv.owner_id = $1 AND dv.application_id = $2
+            AND d.status = 'active' AND dv.id = ANY($3::uuid[])`,
+        [ownerId, applicationId, documentVersionIds],
       );
       if ((found.rows[0]?.count ?? 0) !== documentVersionIds.length) {
         throw apiErrors.validation({

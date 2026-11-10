@@ -5,10 +5,12 @@ import Dashboard, {
   type DashboardTask,
 } from '@/components/dashboard';
 import AnswerBank from '@/components/answer-bank';
+import AiProviderSettings from '@/components/ai-provider-settings';
 import ApplicationTracker from '@/components/application-tracker';
 import JobSearch from '@/components/job-search';
 import {
   answerDto,
+  aiJobReviewDto,
   applicationListDto,
   duplicateSuggestionDto,
   factDto,
@@ -24,6 +26,8 @@ import {
 import { getProfile, listFacts } from '@/lib/profile/service';
 import { listApplications } from '@/lib/applications/service';
 import { listAnswers } from '@/lib/answers/service';
+import { getAiProvider } from '@/lib/ai/providers';
+import { listLatestAiJobReviews } from '@/lib/ai/job-review';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,6 +74,8 @@ export default async function Page() {
     duplicates,
     applications,
     answers,
+    aiProvider,
+    savedAiReviews,
   ] = await Promise.all([
     query<DocumentQueryRow>(
       `SELECT id, kind, original_name, media_type, size_bytes, status, version, created_at
@@ -111,6 +117,8 @@ export default async function Page() {
     listDuplicateSuggestions(session.ownerId),
     listApplications(session.ownerId),
     listAnswers(session.ownerId),
+    getAiProvider(session.ownerId),
+    listLatestAiJobReviews(session.ownerId),
   ]);
 
   const documentsDto: DashboardDocument[] = documents.map((row) => ({
@@ -173,6 +181,16 @@ export default async function Page() {
             kind: document.kind,
             status: document.status,
           }))}
+          aiProviderReady={Boolean(aiProvider?.enabled && aiProvider.lastTestStatus === 'passed')}
+          aiProviderModel={aiProvider?.model ?? null}
+          savedAiReviews={savedAiReviews.map(aiJobReviewDto)}
+        />
+        <AiProviderSettings
+          csrfToken={session.csrfToken}
+          provider={aiProvider ? {
+            ...aiProvider,
+            lastTestedAt: aiProvider.lastTestedAt?.toISOString() ?? null,
+          } : null}
         />
         <ApplicationTracker
           csrfToken={session.csrfToken}
@@ -182,6 +200,7 @@ export default async function Page() {
             title: job.title,
             company: job.company,
           }))}
+          facts={factsDto}
         />
         <AnswerBank
           csrfToken={session.csrfToken}

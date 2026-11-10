@@ -114,6 +114,23 @@ export interface WorkspaceDocumentOption {
   status: string;
 }
 
+export interface WorkspaceAiReview {
+  id: string;
+  jobId: string;
+  providerType: string;
+  model: string;
+  createdAt: string;
+  profileVersion: number;
+  factVersionIds: string[];
+  result: {
+    status: 'needs_review';
+    summary: string;
+    strengths: Array<{ claim: string; factVersionIds: string[]; postingEvidence: string }>;
+    gaps: Array<{ description: string; postingEvidence: string }>;
+    questions: string[];
+  };
+}
+
 export interface JobSearchProps {
   csrfToken: string;
   profile: WorkspaceProfile;
@@ -121,6 +138,9 @@ export interface JobSearchProps {
   jobs: WorkspaceJob[];
   duplicates: WorkspaceDuplicate[];
   documents: WorkspaceDocumentOption[];
+  aiProviderReady: boolean;
+  aiProviderModel: string | null;
+  savedAiReviews: WorkspaceAiReview[];
 }
 
 interface ApiEnvelope<T> {
@@ -211,6 +231,10 @@ export default function JobSearch(props: JobSearchProps) {
   const [sortOrder, setSortOrder] = useState<'recent' | 'score'>('recent');
   const [jobs, setJobs] = useState(props.jobs);
   const [duplicates, setDuplicates] = useState(props.duplicates);
+  const [selectedAiFactIds, setSelectedAiFactIds] = useState<string[]>([]);
+  const [aiReviews, setAiReviews] = useState<Record<string, WorkspaceAiReview>>(
+    Object.fromEntries(props.savedAiReviews.map((review) => [review.jobId, review])),
+  );
 
   function evaluationIsCurrent(job: WorkspaceJob): boolean {
     const evaluation = job.latestEvaluation;
@@ -466,6 +490,37 @@ export default function JobSearch(props: JobSearchProps) {
           ? 'Penilaian disimpan sebagai butuh pemeriksaan karena bukti belum cukup.'
           : `Skor kecocokan heuristik: ${evaluation.score.toFixed(1)} dari 100. Tinjau dimensi dan sumbernya.`,
       );
+    });
+  }
+
+  async function reviewJobWithAi(job: WorkspaceJob): Promise<void> {
+    const facts = props.facts.filter((fact) =>
+      selectedAiFactIds.includes(fact.id) && fact.verificationStatus === 'verified',
+    );
+    if (!facts.length) {
+      setError('Pilih minimal satu fakta terverifikasi di bagian persetujuan AI.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Kirim ${facts.length} fakta terverifikasi yang Anda pilih, serta judul, perusahaan, lokasi, dan deskripsi lowongan "${job.title}" ke ${props.aiProviderModel ?? 'provider AI'} untuk review? Fakta lain, catatan pribadi, dan API key tidak dikirim. Hasilnya tetap draf untuk ditinjau.`,
+    );
+    if (!confirmed) return;
+    await run(async () => {
+      const review = await callApi<WorkspaceAiReview>(
+        `/api/v1/jobs/${job.id}/ai-reviews`,
+        {
+          method: 'POST',
+          csrf: props.csrfToken,
+          idempotencyKey: crypto.randomUUID(),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            factIds: facts.map((fact) => fact.id),
+            confirmDataTransfer: true,
+          }),
+        },
+      );
+      setAiReviews((current) => ({ ...current, [job.id]: review }));
+      setMessage(`Review AI dari ${review.model} tersimpan sebagai draf yang perlu ditinjau.`);
     });
   }
 
@@ -818,6 +873,37 @@ export default function JobSearch(props: JobSearchProps) {
 
       <section className="panel" aria-labelledby="jobs-title">
         <h2 id="jobs-title">Lowongan</h2>
+        <details style={{ marginBottom: 14 }}>
+          <summary>Persetujuan data untuk review AI</summary>
+          <p className="muted" style={{ fontSize: '0.85rem' }}>
+            Pilih fakta satu per satu. Hanya fakta berstatus terverifikasi yang dicentang,
+            bersama detail lowongan yang dipilih saat tombol review ditekan, dikirim ke
+            provider yang aktif. Hasil AI tidak mengubah skor lokal atau mengirim lamaran.
+          </p>
+          {props.facts.filter((fact) => fact.verificationStatus === 'verified').length === 0 ? (
+            <p className="muted">Belum ada fakta terverifikasi.</p>
+          ) : (
+            <div className="grid">
+              {props.facts
+                .filter((fact) => fact.verificationStatus === 'verified')
+                .map((fact) => (
+                  <label key={fact.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedAiFactIds.includes(fact.id)}
+                      onChange={(event) => setSelectedAiFactIds((current) => event.target.checked
+                        ? [...new Set([...current, fact.id])]
+                        : current.filter((id) => id !== fact.id))}
+                    />
+                    <span>{FACT_TYPE_LABELS[fact.type] ?? fact.type}: {describeValue(fact.value)}</span>
+                  </label>
+                ))}
+            </div>
+          )}
+          <p className="muted" style={{ fontSize: '0.8rem' }}>
+            Terpilih: {selectedAiFactIds.length} fakta. Provider: {props.aiProviderReady ? `${props.aiProviderModel} siap` : 'belum aktif atau belum lolos tes koneksi'}.
+          </p>
+        </details>
         <form className="row" onSubmit={loadJobs} style={{ alignItems: 'flex-end' }}>
           <div style={{ flex: 1, minWidth: 220 }}>
             <label htmlFor="job-filter">Cari judul, perusahaan, atau deskripsi</label>
@@ -958,6 +1044,38 @@ export default function JobSearch(props: JobSearchProps) {
                       ) : null}
                     </details>
                   ) : null}
+                  {aiReviews[job.id] ? (
+                    <details style={{ marginTop: 10 }} open>
+                      <summary>Review AI · {aiReviews[job.id]!.model} · perlu ditinjau pemilik</summary>
+                      <p>{aiReviews[job.id]!.result.summary}</p>
+                      {aiReviews[job.id]!.result.strengths.length ? (
+                        <div>
+                          <strong>Kecocokan yang disarankan</strong>
+                          <ul>{aiReviews[job.id]!.result.strengths.map((item, index) => (
+                            <li key={`${aiReviews[job.id]!.id}-s-${index}`}>
+                              {item.claim} <span className="muted">· fakta: {item.factVersionIds.length} · posting: “{item.postingEvidence}”</span>
+                            </li>
+                          ))}</ul>
+                        </div>
+                      ) : null}
+                      {aiReviews[job.id]!.result.gaps.length ? (
+                        <div>
+                          <strong>Gap yang perlu diperiksa</strong>
+                          <ul>{aiReviews[job.id]!.result.gaps.map((item, index) => (
+                            <li key={`${aiReviews[job.id]!.id}-g-${index}`}>
+                              {item.description} <span className="muted">· posting: “{item.postingEvidence}”</span>
+                            </li>
+                          ))}</ul>
+                        </div>
+                      ) : null}
+                      {aiReviews[job.id]!.result.questions.length ? (
+                        <p className="muted">Pertanyaan: {aiReviews[job.id]!.result.questions.join(' · ')}</p>
+                      ) : null}
+                      <p className="muted" style={{ fontSize: '0.8rem' }}>
+                        Versi profil {aiReviews[job.id]!.profileVersion} · {new Date(aiReviews[job.id]!.createdAt).toLocaleString('id-ID')}. Ini saran model, bukan bukti atau keputusan.
+                      </p>
+                    </details>
+                  ) : null}
                 </div>
                 <div className="row" style={{ alignItems: 'flex-start' }}>
                   {job.listing.canonicalUrl ? (
@@ -975,6 +1093,14 @@ export default function JobSearch(props: JobSearchProps) {
                     disabled={busy}
                   >
                     {job.bookmarked ? 'Batalkan simpan' : 'Simpan'}
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => void reviewJobWithAi(job)}
+                    disabled={busy || !props.aiProviderReady || !job.listing.revisionId || !job.description}
+                    title={!props.aiProviderReady ? 'Aktifkan dan tes provider terlebih dahulu.' : undefined}
+                  >
+                    Review dengan AI
                   </button>
                   <button
                     className="secondary"

@@ -64,46 +64,46 @@ Requirement traceability (Phase 2):
 | AC-04 / UAT-09 | Merge returns `MERGE_CONFLICT` when both jobs already have applications |
 | BR-04 / BR-05 | Normalization is pure and unit tested; list filters are explicit (`active`, `archived`, `all`) and `unknown` is not invented |
 
-## Phase 3 — Tracker & answer bank (E08–E09, partial)
+## Phase 3 — Evaluasi, dokumen & tracker P0 (E07–E09)
 
 | Epic | Status | What exists |
 |---|---|---|
-| E09 Tracker | Partial (P0 manual path) | One draft application per job, owner notes with `current_version`, manual submission records (`mode=manual`, `state=submitted_confirmed`, `confirmation_source=manual`), target lock per job, separation from recruitment stage, timeline events, no worker task/quota consumption, deterministic conflict when a `submit_unknown` attempt exists. |
-| E08 Documents/Q&A | Partial (answer bank only) | Encrypted answer bank with owner notes, `version`, `unverified/verified/retracted`, source fact links, deterministic exact/near-question matching, and `needs_user_input` for sensitive/legal/unknown questions. No AI call and no form auto-fill yet. |
-| E07 AI/evaluation | Partial | Local rule-based scoring and ranking at `src/lib/evaluations/`; no provider calls or provider configuration. The proposal weights are versioned as provisional. |
+| E09 Tracker | Done for P0 manual path | One draft application per job, owner notes with `current_version`, manual submission records (`mode=manual`, `state=submitted_confirmed`, `confirmation_source=manual`), target lock per job, separation from recruitment stage, timeline events, no worker task/quota consumption, deterministic conflict when a `submit_unknown` attempt exists. Submission records may attach only reviewed, latest document versions belonging to that application. |
+| E08 Documents/Q&A | Done for P0 local path | CV/cover drafts use only explicitly selected verified facts, retain source fact-version IDs, support immutable edits and owner review, and generate private PDFs with text-layer, structure, page-count and layout checks. Application-scoped screening answers have encrypted content, immutable history and provenance; sensitive/unknown questions require owner input. No portal autofill. |
+| E07 AI/evaluation | Done for P0 with owner review outstanding | Local evidence-based scoring remains deterministic and provisional. Dashboard-configured OpenAI-compatible provider supports a fixed connection test and separately consented job review using only selected verified facts plus the saved posting. API key is encrypted, write-only, endpoint origins are allowlisted, output is schema/evidence checked, and no fallback or submit authority exists. |
 
-Verification (local, 2026-11-09):
+Verification (Phase 3 update, 2026-11-10):
 
-- `npm run typecheck` — pass
-- `npm run lint` — pass
-- `npx vitest run tests/integration/applications.test.ts tests/integration/answer-bank.test.ts` — 16 tests pass
-- Full `npm test` — 17 files / 99 tests pass
-- `npm run build` — still not run on this exFAT checkout
-
-Implementation update (2026-11-10):
-
-- Added local-only evaluation persistence, owner-scoped history/API, profile and
-  posting snapshot checks, evidence-linked dimensions, tri-state hard filters,
-  and dashboard ranking. This is a provisional heuristic slice; no AI provider
-  receives profile or posting data.
-- Profile version now advances when a fact is created, edited, verified, or
-  retracted, so saved evaluations can be identified as stale after profile edits.
-- Tests, typecheck, lint, build, and UAT were **not run for this update**. The
-  earlier results above apply to the 2026-11-09 revision only.
+- Added integration coverage for provider-key encryption/redaction, consented
+  model review and evidence validation, no-fallback behavior, document creation,
+  edit/review/download/manual-submission version binding, and application answer
+  snapshots. Added PDF structure/text/layout unit tests.
+- Added privacy-export coverage for generated drafts and application answers;
+  workspace reset coverage verifies the new Phase 3 rows and files are purged.
+- `npm run typecheck` — pass.
+- `npm run lint` — pass.
+- `npm test` — 19 files / 106 tests pass, including embedded PostgreSQL Phase 3
+  integration, privacy export/reset and local PDF checks.
+- `npm run build` — pass with the production Webpack build.
+- These checks establish implementation coverage; live provider credentials,
+  visual/ATS review and owner UAT sign-off remain pending.
 
 Requirement traceability (Phase 3 slices):
 
 | Requirement/UAT | Coverage |
 |---|---|
-| AC-11 / UAT-37 | Manual submission creates one terminal `manual` attempt, records the reported time and known document versions, and rejects duplicate reports or stale versions |
+| AC-11 / UAT-37 | Manual submission creates one terminal `manual` attempt, records the reported time and known document versions, and rejects duplicate reports or stale versions; Phase 3 tests bind submission to the latest reviewed document for that application |
 | UAT-37 (unknown) | Existing `submit_unknown` attempt returns `SUBMIT_UNKNOWN_REQUIRES_RECONCILIATION` instead of overwriting history |
 | UAT-23 | Recruitment stage changes create timeline events and never change submission status |
 | BR-21 | No browser task and no quota row are created by manual reports |
 | UAT-25 | Application list/detail/update/manual report all return `NOT_FOUND` for another owner |
 | AC-08 / BR-09 | Answer bank: encrypted at rest, verified-only suggestions, unverified shown for review, sensitive/legal/unknown → `needs_user_input`, source facts displayed, answers absent from audit |
 | UAT-24 (answer data) | Answer plaintext is not present in audit details or ciphertext; export decrypts only for the owner |
-| AC-05 / UAT-11 | `src/lib/evaluations/scorer.ts` and `/jobs/{id}/evaluations` implement a provisional local rubric; UAT-11 and regression tests have not been run for this update |
-| UAT-12 | Local scorer returns no total score without a saved posting revision and description; not verified in this update |
+| AC-05 / UAT-10–12 | `src/lib/evaluations/scorer.ts` and `/jobs/{id}/evaluations` implement the provisional evidence-based rubric and unknown/veto handling; owner rubric confirmation and full UAT sign-off remain pending |
+| AC-07 / UAT-13–14, UAT-51 | Local CV/cover template uses verified facts only, preserves source versions, and requires review; PDF checks fail closed on invalid text/layout/page limits. Generated claims are not model-invented. |
+| AC-08 / UAT-15 | Application-specific answer snapshots preserve encrypted answer history and fact-version provenance; sensitive/unknown items require explicit owner input. No portal form is filled automatically. |
+| AC-13 / UAT-24, UAT-53–54 | Provider settings are write-only for the key, connection test records selected model/status, AI review requires explicit transfer consent, and audit data excludes prompt/answer/key content; stubbed provider tests cover error/no-fallback paths. |
+| AC-16 / UAT-39–41 | Export includes AI review metadata, decrypted application answer/document drafts and their versions, private PDFs, and excludes provider keys; reset deletes related DB rows/artifacts and revokes exports. Restore/backup retention remains an operational UAT. |
 
 ## Requirement traceability (foundation)
 
@@ -124,9 +124,10 @@ signed off by the owner.
 
 ## Not started yet
 
-- Phase 3 remainder: AI provider configuration and model-backed evaluation, owner-confirmed rubric, CV/cover generation, PDF checks, and wiring answers into application forms.
 - Phase 4: portal login/session, preflight snapshots, approvals, quota reservations, dispatch intent, evidence/reconciliation, recovery holds API.
 - Phase 5/6: additional adapters, schedules UI, notifications, Gmail/Notion.
+- Additional provider adapters (Gemini and native Anthropic), live provider credentials, production deployment, and external ATS/client compatibility checks.
+- Owner confirmation of the proposed ranking rubric, live end-to-end/UAT sign-off, and isolated backup restore drill.
 
 ## Known gaps / follow-ups
 
@@ -146,13 +147,15 @@ signed off by the owner.
   when extraction templates are defined.
 - Manual submission uses `target_key = job:<id>`; cross-listing verification and
   reconciliation of `submit_unknown` remain Phase 4 work.
-- `document_versions` can be recorded on a manual submission only when those
-  versions already exist; generation/PDF versioning is still Phase 3 remainder.
+- The P0 CV/cover layout is a plain-text local template, not a branded design.
+  PDF checks validate structure, text layer and page limits; visual rendering
+  and ATS compatibility still require owner review on the target deployment.
 - Application cancellation/reopen and Gmail-based suggestions are not implemented.
-- Answer suggestions are deterministic; there is no AI provider or form auto-fill
-  yet. Near-question matching is conservative and never bypasses sensitive checks.
-- Answer bank edits reset verification, but application answers are not yet
-  snapshotted or linked to a specific application.
+- Answer-bank suggestions are deterministic; application-specific answer drafts
+  are saved for manual copy/review and are never auto-filled into a portal.
+- AI job review is a separate advisory draft, not part of the deterministic
+  ranking score. It can be stale after profile or posting changes and never
+  submits an application.
 - No owner password-recovery flow (CLI only), as specified for the pilot but
   operationally incomplete.
 - Cross-owner tests use a directly inserted second user; production provisioning

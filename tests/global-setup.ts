@@ -20,6 +20,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
     password: 'postgres',
     port,
     persistent: false,
+    postgresFlags: ['-c', 'unix_socket_directories='],
   });
 
   await postgres.initialise();

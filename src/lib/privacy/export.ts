@@ -130,6 +130,13 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
         ORDER BY created_at, evaluation_version`,
       [ownerId],
     );
+    const aiJobReviews = await query(
+      `SELECT id, job_id, posting_revision_id, profile_version, fact_version_ids,
+              provider_type, model, prompt_version, schema_version, result_json,
+              input_tokens, output_tokens, latency_ms, created_at
+         FROM ai_job_reviews WHERE owner_id = $1 ORDER BY created_at`,
+      [ownerId],
+    );
     const applications = await query(
       'SELECT * FROM applications WHERE owner_id = $1 ORDER BY created_at',
       [ownerId],
@@ -148,15 +155,67 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
         ORDER BY e.occurred_at`,
       [ownerId],
     );
+    const applicationAnswerRows = await query<{
+      id: string;
+      application_id: string;
+      question: string;
+      answer_ciphertext: Buffer;
+      source_fact_ids: string[];
+      source_fact_version_ids: string[];
+      verification_status: string;
+      version: number;
+      created_at: Date;
+      updated_at: Date;
+    }>(
+      `SELECT aa.* FROM application_answers aa
+         JOIN applications a ON a.id = aa.application_id
+        WHERE a.owner_id = $1 ORDER BY aa.created_at`,
+      [ownerId],
+    );
+    const applicationAnswerVersionRows = await query<{
+      id: string;
+      application_id: string;
+      answer_id: string;
+      version_no: number;
+      question: string;
+      answer_ciphertext: Buffer;
+      source_fact_ids: string[];
+      source_fact_version_ids: string[];
+      verification_status: string;
+      created_at: Date;
+    }>(
+      `SELECT * FROM application_answer_versions
+        WHERE owner_id = $1 ORDER BY created_at`,
+      [ownerId],
+    );
+    const applicationDocumentRows = await query<{
+      id: string;
+      application_id: string;
+      kind: string;
+      version_no: number;
+      content_ciphertext: Buffer;
+      source_fact_version_ids: string[];
+      document_id: string;
+      document_version_id: string;
+      pdf_status: string;
+      pdf_check: unknown;
+      reviewed_at: Date | null;
+      created_at: Date;
+    }>(
+      'SELECT * FROM application_document_versions WHERE owner_id = $1 ORDER BY created_at',
+      [ownerId],
+    );
     const answers = await query<{
       question_key: string;
       question_text: string;
       answer_ciphertext: Buffer;
       source_fact_ids: string[];
+      source_fact_version_ids: string[];
       verification_status: string;
       version: number;
     }>(
       `SELECT question_key, question_text, answer_ciphertext, source_fact_ids,
+              source_fact_version_ids,
               verification_status, version
          FROM answer_bank WHERE owner_id = $1`,
       [ownerId],
@@ -183,6 +242,7 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
           questionText: answer.question_text,
           answer: decryptSecret(answer.answer_ciphertext),
           sourceFactIds: answer.source_fact_ids,
+          sourceFactVersionIds: answer.source_fact_version_ids,
           verificationStatus: answer.verification_status,
           version: answer.version,
         });
@@ -191,6 +251,66 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
           path: `answers/${answer.question_key}`,
           reason: 'ANSWER_DECRYPTION_UNAVAILABLE',
         });
+      }
+    }
+
+    const exportedApplicationAnswers: unknown[] = [];
+    for (const answer of applicationAnswerRows) {
+      try {
+        exportedApplicationAnswers.push({
+          id: answer.id,
+          applicationId: answer.application_id,
+          question: answer.question,
+          answer: decryptSecret(answer.answer_ciphertext),
+          sourceFactIds: answer.source_fact_ids,
+          sourceFactVersionIds: answer.source_fact_version_ids,
+          verificationStatus: answer.verification_status,
+          version: answer.version,
+          createdAt: answer.created_at,
+          updatedAt: answer.updated_at,
+        });
+      } catch {
+        unavailable.push({ path: `applications/answers/${answer.id}`, reason: 'ANSWER_DECRYPTION_UNAVAILABLE' });
+      }
+    }
+    const exportedApplicationAnswerVersions: unknown[] = [];
+    for (const version of applicationAnswerVersionRows) {
+      try {
+        exportedApplicationAnswerVersions.push({
+          id: version.id,
+          applicationId: version.application_id,
+          answerId: version.answer_id,
+          versionNo: version.version_no,
+          question: version.question,
+          answer: decryptSecret(version.answer_ciphertext),
+          sourceFactIds: version.source_fact_ids,
+          sourceFactVersionIds: version.source_fact_version_ids,
+          verificationStatus: version.verification_status,
+          createdAt: version.created_at,
+        });
+      } catch {
+        unavailable.push({ path: `applications/answer-versions/${version.id}`, reason: 'ANSWER_DECRYPTION_UNAVAILABLE' });
+      }
+    }
+    const exportedApplicationDocuments: unknown[] = [];
+    for (const document of applicationDocumentRows) {
+      try {
+        exportedApplicationDocuments.push({
+          id: document.id,
+          applicationId: document.application_id,
+          kind: document.kind,
+          versionNo: document.version_no,
+          content: decryptSecret(document.content_ciphertext),
+          sourceFactVersionIds: document.source_fact_version_ids,
+          documentId: document.document_id,
+          documentVersionId: document.document_version_id,
+          pdfStatus: document.pdf_status,
+          pdfCheck: document.pdf_check,
+          reviewedAt: document.reviewed_at,
+          createdAt: document.created_at,
+        });
+      } catch {
+        unavailable.push({ path: `application-documents/${document.id}`, reason: 'DOCUMENT_DRAFT_DECRYPTION_UNAVAILABLE' });
       }
     }
 
@@ -216,10 +336,14 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
     add('documents.json', { documents, documentVersions });
     add('jobs.json', { jobs });
     add('evaluations.json', { evaluations });
+    add('ai-reviews.json', { reviews: aiJobReviews });
     add('applications.json', {
       applications,
       attempts: applicationAttempts,
       events: applicationEvents,
+      answers: exportedApplicationAnswers,
+      answerVersions: exportedApplicationAnswerVersions,
+      documentDraftVersions: exportedApplicationDocuments,
     });
     add('answers.json', { answers: exportedAnswers });
     add('settings.json', {

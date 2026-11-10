@@ -193,6 +193,7 @@ export async function runWorkspaceReset(
     );
     await client.query('DELETE FROM interview_packs WHERE owner_id = $1', [ownerId]);
     await client.query('DELETE FROM application_attempts WHERE owner_id = $1', [ownerId]);
+    await client.query('DELETE FROM application_document_versions WHERE owner_id = $1', [ownerId]);
     await client.query('DELETE FROM document_versions WHERE owner_id = $1', [ownerId]);
     await client.query('DELETE FROM applications WHERE owner_id = $1', [ownerId]);
 

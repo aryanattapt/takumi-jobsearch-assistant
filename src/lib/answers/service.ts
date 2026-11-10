@@ -14,6 +14,7 @@ export type AnswerVerificationStatus = 'unverified' | 'verified' | 'retracted';
 
 export interface SourceFactView {
   id: string;
+  versionId: string | null;
   type: string;
   value: unknown;
   verificationStatus: AnswerVerificationStatus;
@@ -26,6 +27,7 @@ export interface AnswerView {
   question_text: string;
   answer: string;
   source_fact_ids: string[];
+  source_fact_version_ids: string[];
   verification_status: AnswerVerificationStatus;
   version: number;
   created_at: Date;
@@ -40,6 +42,7 @@ interface AnswerRow {
   question_text: string;
   answer_ciphertext: Buffer;
   source_fact_ids: string[];
+  source_fact_version_ids: string[];
   verification_status: AnswerVerificationStatus;
   version: number;
   created_at: Date;
@@ -48,6 +51,7 @@ interface AnswerRow {
 
 interface FactSourceRow {
   id: string;
+  current_version_id: string | null;
   type: string;
   value: unknown;
   verification_status: AnswerVerificationStatus;
@@ -95,7 +99,7 @@ export async function createAnswer(
   const status = input.verificationStatus ?? 'unverified';
 
   return withTransaction(async (client) => {
-    await assertFactIds(client, ownerId, sourceFactIds);
+    const sourceFactVersionIds = await loadFactVersionIds(client, ownerId, sourceFactIds);
 
     const existing = await client.query(
       'SELECT 1 FROM answer_bank WHERE owner_id = $1 AND question_key = $2',
@@ -113,8 +117,8 @@ export async function createAnswer(
     const inserted = await client.query<AnswerRow>(
       `INSERT INTO answer_bank
          (owner_id, question_key, question_text, answer_ciphertext,
-          source_fact_ids, verification_status)
-       VALUES ($1, $2, $3, $4, $5, $6)
+          source_fact_ids, source_fact_version_ids, verification_status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
         ownerId,
@@ -122,6 +126,7 @@ export async function createAnswer(
         questionText,
         encryptSecret(input.answer),
         sourceFactIds,
+        sourceFactVersionIds,
         status,
       ],
     );
@@ -177,20 +182,21 @@ export async function updateAnswer(
       input.sourceFactIds === undefined
         ? current.source_fact_ids
         : [...new Set(input.sourceFactIds)];
-    if (input.sourceFactIds !== undefined) {
-      await assertFactIds(client, ownerId, sourceFactIds);
-    }
+    const sourceFactVersionIds = await loadFactVersionIds(client, ownerId, sourceFactIds);
+    const sourcesChanged =
+      sourceFactVersionIds.length !== current.source_fact_version_ids.length ||
+      sourceFactVersionIds.some((id, index) => id !== current.source_fact_version_ids[index]);
 
     // Editing a verified answer invalidates the verification until reviewed.
     const effectiveStatus: AnswerVerificationStatus =
       input.verificationStatus ??
-      (answerChanged && current.verification_status === 'verified'
+      ((answerChanged || sourcesChanged) && current.verification_status === 'verified'
         ? 'unverified'
         : current.verification_status);
 
     if (
       !answerChanged &&
-      input.sourceFactIds === undefined &&
+      !sourcesChanged &&
       effectiveStatus === current.verification_status
     ) {
       const facts = await loadSourceFacts(ownerId, current.source_fact_ids);
@@ -201,7 +207,8 @@ export async function updateAnswer(
       `UPDATE answer_bank
           SET answer_ciphertext = $2,
               source_fact_ids = $3,
-              verification_status = $4,
+              source_fact_version_ids = $4,
+              verification_status = $5,
               version = version + 1,
               updated_at = now()
         WHERE id = $1
@@ -210,6 +217,7 @@ export async function updateAnswer(
         answerId,
         answerChanged ? encryptSecret(input.answer!) : current.answer_ciphertext,
         sourceFactIds,
+        sourceFactVersionIds,
         effectiveStatus,
       ],
     );
@@ -223,6 +231,7 @@ export async function updateAnswer(
       requestId: requestId ?? null,
       details: {
         answerChanged,
+        sourcesChanged,
         sourceFactCount: sourceFactIds.length,
         verificationStatus: effectiveStatus,
         version: current.version + 1,
@@ -300,6 +309,18 @@ export async function suggestAnswer(
     };
   }
 
+  if (match.source_facts.some((fact, index) =>
+    fact.verificationStatus !== 'verified' || fact.versionId !== match.source_fact_version_ids[index],
+  )) {
+    return {
+      status: 'needs_review',
+      reason: 'linked_fact_no_longer_verified',
+      question_key: questionKey,
+      similarity,
+      answer: match,
+    };
+  }
+
   return {
     status: 'suggested',
     reason: 'verified_answer',
@@ -309,24 +330,26 @@ export async function suggestAnswer(
   };
 }
 
-async function assertFactIds(
+async function loadFactVersionIds(
   client: PoolClient,
   ownerId: string,
   factIds: string[],
-): Promise<void> {
-  if (factIds.length === 0) return;
-  const found = await client.query<{ count: number }>(
-    `SELECT count(*)::int AS count
+): Promise<string[]> {
+  if (factIds.length === 0) return [];
+  const found = await client.query<{ id: string; current_version_id: string | null }>(
+    `SELECT id, current_version_id
        FROM profile_facts
-      WHERE owner_id = $1 AND id = ANY($2::uuid[])`,
+      WHERE owner_id = $1 AND id = ANY($2::uuid[])
+      ORDER BY array_position($2::uuid[], id)`,
     [ownerId, factIds],
   );
-  if ((found.rows[0]?.count ?? 0) !== factIds.length) {
+  if (found.rows.length !== factIds.length || found.rows.some((row) => !row.current_version_id)) {
     throw apiErrors.validation({
       field: 'sourceFactIds',
-      message: 'Every source fact must belong to the owner',
+      message: 'Every source fact must belong to the owner and have a version',
     });
   }
+  return found.rows.map((row) => row.current_version_id!);
 }
 
 async function loadSourceFacts(
@@ -336,7 +359,7 @@ async function loadSourceFacts(
   const unique = [...new Set(factIds)];
   if (unique.length === 0) return new Map();
   const rows = await query<FactSourceRow>(
-    `SELECT f.id, f.type, f.verification_status, v.value
+    `SELECT f.id, f.current_version_id, f.type, f.verification_status, v.value
        FROM profile_facts f
        LEFT JOIN profile_fact_versions v ON v.id = f.current_version_id
       WHERE f.owner_id = $1 AND f.id = ANY($2::uuid[])`,
@@ -347,6 +370,7 @@ async function loadSourceFacts(
       row.id,
       {
         id: row.id,
+        versionId: row.current_version_id,
         type: row.type,
         value: row.value,
         verificationStatus: row.verification_status,
@@ -363,6 +387,7 @@ function toView(row: AnswerRow, facts: Map<string, SourceFactView>): AnswerView 
     question_text: row.question_text,
     answer: decryptSecret(row.answer_ciphertext),
     source_fact_ids: row.source_fact_ids,
+    source_fact_version_ids: row.source_fact_version_ids,
     verification_status: row.verification_status,
     version: row.version,
     created_at: row.created_at,

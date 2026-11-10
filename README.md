@@ -5,10 +5,9 @@ in [`requirement/`](./requirement) and is treated as **read-only source of truth
 implementation decisions and their status are tracked in
 [`docs/decisions.md`](./docs/decisions.md).
 
-Current implementation: **Phase 0–2 + Phase 3 tracker, answer-bank, and local
-job-evaluation slices** (private foundation, profile/manual job search, manual
-application tracking, encrypted screening answers, and evidence-linked heuristic
-scoring) — see
+Current implementation: **Phase 0–3 P0** (private foundation, profile/manual job
+search, evidence-linked ranking, consented AI review, versioned CV/cover PDFs,
+application-specific screening answers, and manual application tracking) — see
 [`docs/implementation-status.md`](./docs/implementation-status.md).
 
 ## What works today
@@ -46,13 +45,28 @@ scoring) — see
   profile preferences with a saved posting revision. Dimensions and hard filters
   show evidence, gaps, and unknowns; incomplete dimensions keep the total score
   null and require review. Scores are heuristic match measures, not hiring odds.
+- Optional OpenAI-compatible provider configured from the dashboard. Its API key
+  is encrypted and never returned; HTTPS endpoint origins are restricted by
+  `AI_ALLOWED_ENDPOINT_ORIGINS`. A connection test sends a fixed prompt only.
+- AI job review is a separate advisory flow: each run requires explicit consent
+  and selected verified profile facts; only those facts and the saved posting are
+  sent. Output must cite supplied fact versions and exact posting excerpts, is
+  shown as a draft for owner review, and has no application-submit capability.
+- Per-application CV and cover-letter drafts use selected verified facts, retain
+  fact-version provenance, support immutable revisions and owner review, and
+  produce private PDFs with local text-layer, structure and page-layout checks.
+- Application-scoped screening answer drafts and immutable history are encrypted
+  at rest and linked to source fact versions. Sensitive or unknown questions
+  require owner input; suggestions are copied/reviewed manually and never
+  auto-filled into a portal.
 - Minimal accessible dashboard + login page, profile/fact editor, job import and
   filtering/ranking UI, evaluation details, application tracker UI, and health
   endpoints.
 
-Not built yet: AI-provider-backed evaluation, CV/cover generation and PDF
-checks, portal automation, approvals, quota enforcement, schedules UI,
-notifications, and AI provider configuration. See the phase table in
+Not built yet: portal automation, approvals, quota enforcement, schedules UI,
+notifications, and native Gemini/Anthropic adapters. The local CV/cover template
+is intentionally plain text; visual/ATS acceptance and live end-to-end UAT still
+need owner sign-off. See the phase table in
 `docs/implementation-status.md`.
 
 ## Stack
@@ -123,6 +137,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | `BACKUP_RETENTION_DAYS` | no | Default 30 (proposal DEC-08) |
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_WINDOW_MINUTES` | no | Default 5 / 15 |
 | `STORAGE_MAX_BYTES` | no | Default 10 MiB per upload |
+| `AI_ALLOWED_ENDPOINT_ORIGINS` | no | Comma-separated exact HTTPS base URLs permitted for the OpenAI-compatible adapter; defaults to `https://api.openai.com/v1` |
 
 ## API surface (implemented)
 
@@ -135,18 +150,20 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | Profile | `GET/PATCH /api/v1/profile`, `GET/POST /api/v1/profile/facts`, `PATCH /api/v1/profile/facts/{id}` |
 | Jobs | `GET /api/v1/jobs`, `GET /api/v1/jobs/{id}`, `PATCH /api/v1/jobs/{id}`, `POST /api/v1/jobs/imports` |
 | Evaluations | `GET/POST /api/v1/jobs/{id}/evaluations`, `GET /api/v1/jobs/{id}/evaluations/{evaluationId}` |
+| AI provider/review | `GET/PUT/POST /api/v1/ai/provider`, `GET/POST /api/v1/jobs/{id}/ai-reviews` |
 | Duplicates | `GET /api/v1/duplicate-suggestions`, `POST /api/v1/duplicate-suggestions/{id}/resolve` |
 | Applications | `GET/POST /api/v1/applications`, `GET/PATCH /api/v1/applications/{id}` |
 | Tracker | `POST /api/v1/applications/{id}/manual-submissions`, `PATCH /api/v1/applications/{id}/recruitment-stage`, `GET /api/v1/applications/{id}/events` |
 | Answer bank | `GET/POST /api/v1/answer-bank`, `PATCH /api/v1/answer-bank/{id}`, `POST /api/v1/answer-bank/suggest` |
+| Application drafts | `GET/POST /api/v1/applications/{id}/answers`, `GET/POST /api/v1/applications/{id}/documents`, `PATCH /api/v1/applications/{id}/documents/{versionId}`, `POST /api/v1/applications/{id}/documents/{versionId}/review` |
 | Tasks | `GET /api/v1/tasks/{id}`, `POST /api/v1/tasks/{id}/cancel` |
 
 All authenticated mutations require `x-csrf-token` (from login/session response)
 and a same-origin `Origin`. Async commands require `Idempotency-Key`. Response
 envelopes follow the requirement contract: `{ data, meta }` / `{ error }`.
-The current evaluation endpoint is synchronous and local-only. Its provisional
-rubric remains subject to owner confirmation; it sends no profile or posting
-data to an AI provider.
+The ranking endpoint remains synchronous and local-only; its provisional rubric
+is independent of the optional AI review and remains subject to owner
+confirmation. AI review never changes the ranking score.
 
 ### Local evaluation preferences
 
@@ -200,8 +217,10 @@ npm run build
 
 Tests cover provisioning races, sessions/CSRF/origin, owner scoping,
 idempotency replay/conflict, queue leasing/fencing/expiry, DST schedule slots,
-document validation/purge, export generation/revocation, workspace reset and
-audit redaction.
+document validation/purge, export generation/revocation, workspace reset,
+audit redaction, provider secret handling and no-fallback behavior, consented AI
+review grounding, document version/PDF checks, application answer history, and
+Phase 3 export/reset coverage.
 
 ## Layout
 

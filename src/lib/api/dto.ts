@@ -10,6 +10,8 @@ import type {
   ApplicationRow,
 } from '@/lib/applications/service';
 import type { DocumentRow } from '@/lib/documents/service';
+import type { ApplicationDocumentVersion } from '@/lib/documents/application-drafts';
+import type { ApplicationAnswer } from '@/lib/applications/answers';
 import type { PrivacyRequestRow } from '@/lib/privacy/requests';
 import type { TaskRecord } from '@/lib/queue/tasks';
 import type {
@@ -19,6 +21,7 @@ import type {
   JobRow,
 } from '@/lib/jobs/service';
 import type { MatchEvaluationRow } from '@/lib/evaluations/service';
+import type { AiJobReview } from '@/lib/ai/job-review';
 import type { FactRow, ProfileWithTimezone } from '@/lib/profile/service';
 import { apiErrors } from '@/lib/http/errors';
 
@@ -41,6 +44,49 @@ export function documentDto(row: DocumentRow) {
     version: row.version,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
+  };
+}
+
+export function applicationDocumentVersionDto(row: ApplicationDocumentVersion) {
+  return {
+    id: row.id,
+    applicationId: row.application_id,
+    kind: row.kind,
+    versionNo: row.version_no,
+    content: row.content,
+    sourceFactVersionIds: row.source_fact_version_ids,
+    documentId: row.document_id,
+    documentVersionId: row.document_version_id,
+    documentStatus: row.document_status,
+    pdfStatus: row.pdf_status,
+    pdfCheck: row.pdf_check,
+    reviewedAt: row.reviewed_at?.toISOString() ?? null,
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
+export function applicationAnswerDto(row: ApplicationAnswer) {
+  return {
+    id: row.id,
+    applicationId: row.application_id,
+    question: row.question,
+    answer: row.answer,
+    sourceFactIds: row.source_fact_ids,
+    sourceFactVersionIds: row.source_fact_version_ids,
+    verificationStatus: row.verification_status,
+    version: row.version,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+    history: row.history.map((version) => ({
+      id: version.id,
+      versionNo: version.version_no,
+      question: version.question,
+      answer: version.answer,
+      sourceFactIds: version.source_fact_ids,
+      sourceFactVersionIds: version.source_fact_version_ids,
+      verificationStatus: version.verification_status,
+      createdAt: version.created_at.toISOString(),
+    })),
   };
 }
 
@@ -191,6 +237,25 @@ export function evaluationDto(row: MatchEvaluationRow) {
   };
 }
 
+export function aiJobReviewDto(row: AiJobReview) {
+  return {
+    id: row.id,
+    jobId: row.job_id,
+    postingRevisionId: row.posting_revision_id,
+    profileVersion: row.profile_version,
+    factVersionIds: row.fact_version_ids,
+    providerType: row.provider_type,
+    model: row.model,
+    promptVersion: row.prompt_version,
+    schemaVersion: row.schema_version,
+    result: row.result_json,
+    inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens,
+    latencyMs: row.latency_ms,
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
 export function jobDetailDto(detail: JobDetail) {
   return {
     ...jobBaseDto(detail.job),
@@ -324,6 +389,7 @@ export function applicationDetailDto(detail: ApplicationDetail) {
 function sourceFactDto(fact: AnswerView['source_facts'][number]) {
   return {
     id: fact.id,
+    versionId: fact.versionId,
     type: fact.type,
     value: fact.value,
     verificationStatus: fact.verificationStatus,
@@ -338,6 +404,7 @@ export function answerDto(row: AnswerView) {
     answer: row.answer,
     verificationStatus: row.verification_status,
     sourceFactIds: row.source_fact_ids,
+    sourceFactVersionIds: row.source_fact_version_ids,
     sourceFacts: row.source_facts.map(sourceFactDto),
     version: row.version,
     createdAt: row.created_at.toISOString(),
