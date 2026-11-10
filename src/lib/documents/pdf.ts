@@ -19,7 +19,12 @@ function toPdfText(value: string): string {
   return value
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/[^\x20-\x7e]/gu, '?');
+    .replace(/[–—−]/gu, '-')
+    .replace(/•/gu, '-')
+    .replace(/·/gu, '|')
+    .replace(/[“”]/gu, '"')
+    .replace(/[‘’]/gu, "'")
+    .replace(/[^\x20-\x7e]/gu, ' ');
 }
 
 function wrap(text: string, width: number): string[] {

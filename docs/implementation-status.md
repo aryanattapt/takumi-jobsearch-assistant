@@ -82,11 +82,17 @@ Verification (Phase 3 update, 2026-11-10):
   workspace reset coverage verifies the new Phase 3 rows and files are purged.
 - `npm run typecheck` — pass.
 - `npm run lint` — pass.
-- `npm test` — 19 files / 106 tests pass, including embedded PostgreSQL Phase 3
+- `npm test` — 19 files / 107 tests pass, including embedded PostgreSQL Phase 3
   integration, privacy export/reset and local PDF checks.
 - `npm run build` — pass with the production Webpack build.
+- Rendered a representative one-page A4 PDF and verified it with `pdfinfo` and
+  `pdftotext`; unsupported Unicode punctuation is normalized to readable ASCII.
 - These checks establish implementation coverage; live provider credentials,
-  visual/ATS review and owner UAT sign-off remain pending.
+  owner acceptance of the plain-text layout and rubric, ATS compatibility, and
+  owner UAT sign-off remain pending.
+- The isolated backup-restore drill was not run because this checkout has no
+  configured pilot database or PostgreSQL backup client; privacy export/reset
+  behavior is covered by integration tests.
 
 Requirement traceability (Phase 3 slices):
 

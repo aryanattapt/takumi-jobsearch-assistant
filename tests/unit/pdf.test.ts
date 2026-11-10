@@ -21,6 +21,13 @@ describe('local PDF compiler', () => {
     expect(result.check.issues).toContain('layout_or_page_limit_failed');
   });
 
+  it('normalizes unsupported punctuation without inserting question marks', () => {
+    const result = compileTextPdf('Kandidat — Backend Engineer · Jakarta • TypeScript', 1);
+    const pdfText = result.buffer.toString('ascii');
+    expect(pdfText).toContain('(Kandidat - Backend Engineer | Jakarta - TypeScript) Tj');
+    expect(pdfText).not.toContain('(Kandidat ? Backend Engineer ? Jakarta ? TypeScript) Tj');
+  });
+
   it('rejects an empty source document', () => {
     expect(() => compileTextPdf('  \n', 1)).toThrow('PDF_INPUT_INVALID');
   });
