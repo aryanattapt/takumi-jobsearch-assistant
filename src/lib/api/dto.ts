@@ -29,6 +29,7 @@ import type {
   ReviewSnapshotResult,
   RevokeApprovalResult,
 } from '@/lib/submissions/service';
+import type { SubmissionSettings } from '@/lib/submissions/settings';
 import type { FactRow, ProfileWithTimezone } from '@/lib/profile/service';
 import { apiErrors } from '@/lib/http/errors';
 
@@ -426,6 +427,20 @@ export function revokedApprovalDto(result: RevokeApprovalResult) {
       revokedAt: result.approval.revoked_at?.toISOString() ?? null,
     },
     applicationVersion: result.applicationVersion,
+  };
+}
+
+export function submissionSettingsDto(settings: SubmissionSettings) {
+  return {
+    browserEnabled: settings.browserEnabled,
+    canEnableBrowser: settings.canEnableBrowser,
+    activationBlockers: settings.activationBlockers,
+    quotaTimezone: settings.quotaTimezone,
+    globalLimit: settings.globalLimit,
+    sourceLimits: settings.sourceLimits,
+    policyVersion: settings.policyVersion,
+    version: settings.version,
+    updatedAt: settings.updatedAt.toISOString(),
   };
 }
 

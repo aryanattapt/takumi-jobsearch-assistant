@@ -6,6 +6,7 @@ import Dashboard, {
 } from '@/components/dashboard';
 import AnswerBank from '@/components/answer-bank';
 import AiProviderSettings from '@/components/ai-provider-settings';
+import SubmissionSettings from '@/components/submission-settings';
 import ApplicationTracker from '@/components/application-tracker';
 import JobSearch from '@/components/job-search';
 import {
@@ -28,6 +29,7 @@ import { listApplications } from '@/lib/applications/service';
 import { listAnswers } from '@/lib/answers/service';
 import { getAiProvider } from '@/lib/ai/providers';
 import { listLatestAiJobReviews } from '@/lib/ai/job-review';
+import { getSubmissionSettings } from '@/lib/submissions/settings';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,7 +68,6 @@ export default async function Page() {
     documents,
     privacyRequests,
     tasks,
-    controls,
     holds,
     profile,
     facts,
@@ -76,6 +77,7 @@ export default async function Page() {
     answers,
     aiProvider,
     savedAiReviews,
+    submissionSettings,
   ] = await Promise.all([
     query<DocumentQueryRow>(
       `SELECT id, kind, original_name, media_type, size_bytes, status, version, created_at
@@ -101,10 +103,6 @@ export default async function Page() {
         LIMIT 10`,
       [session.ownerId],
     ),
-    queryOne<{ browser_enabled: boolean }>(
-      'SELECT browser_enabled FROM submission_controls WHERE owner_id = $1',
-      [session.ownerId],
-    ),
     queryOne<{ count: number }>(
       `SELECT count(*)::int AS count
          FROM submission_recovery_holds
@@ -119,6 +117,7 @@ export default async function Page() {
     listAnswers(session.ownerId),
     getAiProvider(session.ownerId),
     listLatestAiJobReviews(session.ownerId),
+    getSubmissionSettings(session.ownerId),
   ]);
 
   const documentsDto: DashboardDocument[] = documents.map((row) => ({
@@ -165,7 +164,7 @@ export default async function Page() {
       documents={documentsDto}
       privacyRequests={privacyDto}
       tasks={tasksDto}
-      browserEnabled={controls?.browser_enabled ?? false}
+      browserEnabled={submissionSettings.browserEnabled}
       activeHolds={holds?.count ?? 0}
     >
       <>
@@ -206,6 +205,13 @@ export default async function Page() {
           csrfToken={session.csrfToken}
           answers={answers.map(answerDto)}
           facts={factsDto}
+        />
+        <SubmissionSettings
+          csrfToken={session.csrfToken}
+          settings={{
+            ...submissionSettings,
+            updatedAt: submissionSettings.updatedAt.toISOString(),
+          }}
         />
       </>
     </Dashboard>

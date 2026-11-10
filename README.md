@@ -65,6 +65,10 @@ answers, manual tracking, local preflight snapshots, approvals, and dry-runs) â€
   supports owner approval/revocation, and records dry-runs as `simulated`. It
   never opens a browser, reads cookies, contacts a portal, sends candidate
   data, or consumes quota.
+- Owners can prepare a global and per-source quota policy with an IANA timezone.
+  The dashboard and API keep browser submission disabled until the first portal
+  adapter and its evidence rules are qualified; these settings do not reserve
+  quota or submit applications.
 - Minimal accessible dashboard + login page, profile/fact editor, job import and
   filtering/ranking UI, evaluation details, application tracker UI, and health
   endpoints.
@@ -166,6 +170,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | Answer bank | `GET/POST /api/v1/answer-bank`, `PATCH /api/v1/answer-bank/{id}`, `POST /api/v1/answer-bank/suggest` |
 | Application drafts | `GET/POST /api/v1/applications/{id}/answers`, `GET/POST /api/v1/applications/{id}/documents`, `PATCH /api/v1/applications/{id}/documents/{versionId}`, `POST /api/v1/applications/{id}/documents/{versionId}/review` |
 | Local Portal Assist fixture | `POST /api/v1/applications/{id}/preflights`, `GET /api/v1/applications/{id}/review`, `POST /api/v1/applications/{id}/approvals`, `POST /api/v1/approvals/{id}/revoke`, `POST /api/v1/applications/{id}/dry-runs` |
+| Submission settings | `GET/PATCH /api/v1/submission-settings` (quota policy only; browser enablement remains blocked) |
 | Tasks | `GET /api/v1/tasks/{id}`, `POST /api/v1/tasks/{id}/cancel` |
 
 All authenticated mutations require `x-csrf-token` (from login/session response)
