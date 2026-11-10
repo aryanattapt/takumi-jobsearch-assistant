@@ -164,8 +164,11 @@ Verification (local, 2026-11-10):
   checked that the earliest checkpoint and unknown window end stayed
   conservative. A manual owner report reconciled the lost activity; guarded
   release retained browser-disabled state. No real portal or pilot backup was
-  used, so UAT-47 remains partial; live portal history, quota evidence, and the
-  intent/hold race still need owner UAT.
+  used, so UAT-47 remains partial; live portal history and quota evidence still
+  need owner UAT. A PostgreSQL integration regression test also races dispatch
+  intent against the post-restore CLI guard and verifies both valid serialized
+  outcomes: intent commits before the guard, or the guard blocks intent and
+  releases the pre-intent reservation. Live worker timing remains untested.
 
 Requirement traceability (Phase 4 implemented slices):
 
@@ -175,7 +178,7 @@ Requirement traceability (Phase 4 implemented slices):
 | AC-10 / UAT-18 | Approval binds the snapshot hash and current document/fact/posting state; mutations cause stale review and prevent dry-run. |
 | BR-15 (partial) | Owner can save quota timezone and global/per-source limits. Internal services reserve and consume counters atomically, enforce limits at reservation and intent, handle local-midnight rollover, and release on pre-intent cancellation. Browser enablement remains rejected until adapter qualification. |
 | UAT-41 (partial) | Active recovery holds block intent. Owners can record manual evidence, resolve a known attempt outcome, and release a hold only after the scope, coverage, quota, and external history checks pass. Portal evidence is not automatically validated; the actual pilot restore remains open. |
-| UAT-47 (partial) | Post-restore guard disables browser submission and creates a global hold. A synthetic cold-copy restore drill verified read-only preview, guarded apply/reapply, recovery of a lost post-checkpoint manual submission, and release with browser submission still disabled. Real portal history, pilot backup, quota evidence, and the intent/hold race remain for owner UAT. |
+| UAT-47 (partial) | Post-restore guard disables browser submission and creates a global hold. A synthetic cold-copy restore drill verified read-only preview, guarded apply/reapply, recovery of a lost post-checkpoint manual submission, and release with browser submission still disabled. A PostgreSQL integration race test verifies dispatch intent serializes with guard application. Real portal history, pilot backup, quota evidence, and live worker timing remain for owner UAT. |
 | BR-12 / UAT-37 (manual path) | A manual submission can store an optional owner-provided confirmation reference; it is not fetched or validated and the result remains labelled owner-reported/manual. |
 | UAT-45–46 (partial) | Integration tests cover available/full quota at local midnight and same-day limit reductions before intent. Broader clock, timezone-change, and live worker scenarios remain untested. |
 | UAT-50 (partial) | Cancellation and intent serialize on the owner control. Invalid approval or dispatch gate before intent now terminates as `not_submitted` and releases quota; regression coverage and portal outcomes after intent remain open. |

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { execFile } from 'node:child_process';
 import { getPool } from '@/lib/db/pool';
 import { encryptSecret } from '@/lib/crypto/secrets';
 import { createApplication } from '@/lib/applications/service';
@@ -15,6 +16,23 @@ const APPROVAL_EXPIRY = '2027-01-01T00:00:00Z';
 const SOURCE_CODE = 'fixture-portal';
 const BEFORE_MIDNIGHT = new Date('2026-11-10T16:55:00Z');
 const AFTER_MIDNIGHT = new Date('2026-11-10T17:01:00Z');
+
+function applyPostRestoreGuard(checkpointAt: Date): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      process.execPath,
+      ['--import', 'tsx', 'scripts/post-restore-guard.ts', '--checkpoint-at', checkpointAt.toISOString(), '--apply'],
+      { cwd: process.cwd() },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(`${error.message}\n${stderr}`));
+          return;
+        }
+        resolve(stdout);
+      },
+    );
+  });
+}
 
 async function createAttempt(ownerId: string, suffix: string) {
   const pool = getPool();
@@ -338,6 +356,66 @@ describe('submission quota reservation and dispatch intent', () => {
       [fixture.attemptId],
     );
     expect(state.rows[0]).toMatchObject({ state: 'released', reserved_count: 0, consumed_count: 0 });
+  });
+
+  it('serializes dispatch intent against the post-restore guard', async () => {
+    const owner = await createTestOwner();
+    const fixture = await createAttempt(owner.ownerId, 'guard-race');
+    const now = new Date();
+    await reserveAttemptQuota(owner.ownerId, fixture.applicationId, fixture.attemptId, now);
+
+    const [intent] = await Promise.all([
+      recordDispatchIntent({
+        ownerId: owner.ownerId,
+        applicationId: fixture.applicationId,
+        attemptId: fixture.attemptId,
+        expectedAttemptVersion: 1,
+        dispatchOwner: 'worker-test-restore-race',
+        now,
+      }),
+      applyPostRestoreGuard(new Date(now.getTime() - 60_000)),
+    ]);
+
+    const state = await getPool().query<{
+      browser_enabled: boolean;
+      hold_status: string | null;
+      attempt_state: string;
+      dispatch_intent_at: Date | null;
+      reservation_state: string;
+    }>(
+      `SELECT c.browser_enabled, h.status AS hold_status,
+              a.state AS attempt_state, a.dispatch_intent_at, r.state AS reservation_state
+         FROM submission_controls c
+         JOIN applications ap ON ap.owner_id = c.owner_id AND ap.id = $2
+         JOIN application_attempts a ON a.application_id = ap.id AND a.id = $3
+         JOIN quota_reservations r ON r.attempt_id = a.id
+         LEFT JOIN submission_recovery_holds h
+           ON h.owner_id = c.owner_id AND h.scope = 'global' AND h.scope_key = ''
+          AND h.status = 'active'
+        WHERE c.owner_id = $1`,
+      [owner.ownerId, fixture.applicationId, fixture.attemptId],
+    );
+    expect(state.rows[0]).toMatchObject({ browser_enabled: false, hold_status: 'active' });
+
+    if (intent.intentRecorded) {
+      expect(state.rows[0]).toMatchObject({ attempt_state: 'submitting', reservation_state: 'consumed' });
+      expect(state.rows[0]!.dispatch_intent_at).not.toBeNull();
+      const auditOrder = await getPool().query<{ action: string }>(
+        `SELECT action FROM audit_events
+          WHERE owner_id = $1
+            AND action IN ('application.dispatch.intent_recorded', 'submission.recovery_guard.applied')
+          ORDER BY id`,
+        [owner.ownerId],
+      );
+      expect(auditOrder.rows.map((row) => row.action)).toEqual([
+        'application.dispatch.intent_recorded',
+        'submission.recovery_guard.applied',
+      ]);
+    } else {
+      expect(state.rows[0]).toMatchObject({ attempt_state: 'not_submitted', reservation_state: 'released' });
+      expect(state.rows[0]!.dispatch_intent_at).toBeNull();
+      expect(intent.reason).toMatch(/SUBMISSION_DISABLED|SUBMISSION_RECOVERY_HOLD/);
+    }
   });
 
   it('blocks dispatch when approved facts change after quota reservation', async () => {
