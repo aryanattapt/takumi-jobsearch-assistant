@@ -90,9 +90,10 @@ Verification (Phase 3 update, 2026-11-10):
 - These checks establish implementation coverage; live provider credentials,
   owner acceptance of the plain-text layout and rubric, ATS compatibility, and
   owner UAT sign-off remain pending.
-- The isolated backup-restore drill was not run because this checkout has no
-  configured pilot database or PostgreSQL backup client; privacy export/reset
-  behavior is covered by integration tests.
+- At that point, a pilot backup-restore drill was not run because the checkout
+  had no configured pilot database or PostgreSQL backup client. A synthetic
+  isolated cold-copy drill was run later; see the Phase 4 follow-up below.
+  Privacy export/reset behavior remains covered by integration tests.
 
 Requirement traceability (Phase 3 slices):
 
@@ -148,14 +149,23 @@ Verification (local, 2026-11-10):
   guard CLI. With `--apply`, it disables browser submission, creates or
   conservatively widens a global recovery hold under the dispatch control lock,
   and records an operator audit event. The CLI cannot isolate the prior worker
-  or browser session; an isolated backup-restore drill and UAT-47 remain open.
+  or browser session; real pilot backup and portal-history UAT remain open.
 - Phase 4 follow-up (2026-11-10): added owner-only manual recovery actions for
   attempts and holds. `confirmed_sent` and `confirmed_not_sent` require
   outcome-specific checks and evidence references; `unknown` stays locked.
   Hold release checks active attempts, a complete review window, external
   activity and quota attestations, and records resolution metadata/audit.
-  Browser submission remains disabled. `npm run lint`, `npm run typecheck`,
-  and `npm run build` pass; tests and the isolated restore drill were not run.
+  Browser submission remains disabled. Lint, typecheck, build, targeted quota
+  and recovery suites, and the GitHub CI run pass.
+- UAT-47 follow-up (2026-11-10): ran a synthetic cold-copy PostgreSQL restore
+  drill in disposable data directories. It backed up a draft, created a
+  post-checkpoint manual submission on the live copy, restored the old draft,
+  verified the preview made no changes, applied and repeated the guard, and
+  checked that the earliest checkpoint and unknown window end stayed
+  conservative. A manual owner report reconciled the lost activity; guarded
+  release retained browser-disabled state. No real portal or pilot backup was
+  used, so UAT-47 remains partial; live portal history, quota evidence, and the
+  intent/hold race still need owner UAT.
 
 Requirement traceability (Phase 4 implemented slices):
 
@@ -164,8 +174,8 @@ Requirement traceability (Phase 4 implemented slices):
 | AC-10 / UAT-16 | Local dry-run stores `simulated`; fixture code has no browser/network dispatch, and integration test confirms zero task and quota rows. |
 | AC-10 / UAT-18 | Approval binds the snapshot hash and current document/fact/posting state; mutations cause stale review and prevent dry-run. |
 | BR-15 (partial) | Owner can save quota timezone and global/per-source limits. Internal services reserve and consume counters atomically, enforce limits at reservation and intent, handle local-midnight rollover, and release on pre-intent cancellation. Browser enablement remains rejected until adapter qualification. |
-| UAT-41 (partial) | Active recovery holds block intent. Owners can record manual evidence, resolve a known attempt outcome, and release a hold only after the scope, coverage, quota, and external history checks pass. Portal evidence is not automatically validated, and a restore drill remains open. |
-| UAT-47 (partial) | Post-restore guard disables browser submission and creates a global hold. The dashboard supports manual attempt reconciliation and guarded hold release; missing external history and quota completeness still depend on owner review and were not exercised in a restore drill. |
+| UAT-41 (partial) | Active recovery holds block intent. Owners can record manual evidence, resolve a known attempt outcome, and release a hold only after the scope, coverage, quota, and external history checks pass. Portal evidence is not automatically validated; the actual pilot restore remains open. |
+| UAT-47 (partial) | Post-restore guard disables browser submission and creates a global hold. A synthetic cold-copy restore drill verified read-only preview, guarded apply/reapply, recovery of a lost post-checkpoint manual submission, and release with browser submission still disabled. Real portal history, pilot backup, quota evidence, and the intent/hold race remain for owner UAT. |
 | BR-12 / UAT-37 (manual path) | A manual submission can store an optional owner-provided confirmation reference; it is not fetched or validated and the result remains labelled owner-reported/manual. |
 | UAT-45–46 (partial) | Integration tests cover available/full quota at local midnight and same-day limit reductions before intent. Broader clock, timezone-change, and live worker scenarios remain untested. |
 | UAT-50 (partial) | Cancellation and intent serialize on the owner control. Invalid approval or dispatch gate before intent now terminates as `not_submitted` and releases quota; regression coverage and portal outcomes after intent remain open. |
@@ -191,10 +201,10 @@ signed off by the owner.
 
 ## Not started yet
 
-- Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, automated portal evidence validation, cross-listing target identity, full restore-loss recovery verification, regression coverage for invalid-approval cleanup, and owner live UAT. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
+- Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, automated portal evidence validation, cross-listing target identity, pilot backup/portal restore verification, regression coverage for invalid-approval cleanup, and owner live UAT. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
 - Phase 5/6: additional adapters, schedules UI, notifications, Gmail/Notion.
 - Additional provider adapters (Gemini and native Anthropic), live provider credentials, production deployment, and external ATS/client compatibility checks.
-- Owner confirmation of the proposed ranking rubric, live end-to-end/UAT sign-off, and isolated backup restore drill.
+- Owner confirmation of the proposed ranking rubric, live end-to-end/UAT sign-off, and restore drill against the actual pilot backup and portal history.
 
 ## Known gaps / follow-ups
 
