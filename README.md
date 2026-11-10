@@ -5,10 +5,11 @@ in [`requirement/`](./requirement) and is treated as **read-only source of truth
 implementation decisions and their status are tracked in
 [`docs/decisions.md`](./docs/decisions.md).
 
-Current implementation: **Phase 0–3 P0 plus the Phase 4 local-fixture slice**
+Current implementation: **Phase 0–3 P0 plus safe Phase 4 slices**
 (private foundation, profile/manual job search, evidence-linked ranking,
 consented AI review, versioned CV/cover PDFs, application-specific screening
-answers, manual tracking, local preflight snapshots, approvals, and dry-runs) — see
+answers, manual tracking, JobStreet manual handoff, local preflight snapshots,
+approvals, and dry-runs) — see
 [`docs/implementation-status.md`](./docs/implementation-status.md).
 
 ## What works today
@@ -38,7 +39,8 @@ answers, manual tracking, local preflight snapshots, approvals, and dry-runs) �
 - P0 application tracker: create one draft per job, keep submission status
   separate from recruitment stage, record owner-reported manual submissions with
   an idempotency key, optimistic versions, timeline events and no worker/quota
-  side effects.
+  side effects. JobStreet links open only after an owner click; manual records
+  can include an optional confirmation reference that is not portal-verified.
 - Encrypted screening answer bank with optimistic versions, verified/unverified/
   retracted states, source-fact links, and deterministic suggestions. Sensitive,
   legal or unknown questions always return `needs_user_input` instead of a guess.
@@ -78,10 +80,11 @@ answers, manual tracking, local preflight snapshots, approvals, and dry-runs) �
   endpoints.
 
 Not built yet: real portal accounts/sessions, browser-attempt creation and live
-worker dispatch, evidence capture/reconciliation, recovery-hold resolution,
-schedules UI, notifications, and native Gemini/Anthropic adapters. DEC-16 and per-adapter
-evidence rules remain pending, so the fixture is not a substitute for selecting
-an allowed portal. The local CV/cover template is intentionally plain text;
+worker dispatch, automated evidence capture/reconciliation, recovery-hold
+resolution, schedules UI, notifications, and native Gemini/Anthropic adapters.
+JobStreet is selected for manual handoff only: its published terms restrict
+automated access without a specifically permitted interface and applicable
+terms. The local CV/cover template is intentionally plain text;
 visual/ATS acceptance and live end-to-end UAT still need owner sign-off. See the phase table in
 `docs/implementation-status.md`.
 

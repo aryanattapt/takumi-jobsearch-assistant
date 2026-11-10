@@ -23,18 +23,32 @@ Status legend: **assumed** = used because the plan needs a concrete default;
 | DEC-10 | assumed | No automatic reapply/withdraw | State machine only allows explicit commands |
 | DEC-11 | assumed | No cookie-sync extension | Not implemented |
 | DEC-12 | assumed | Schedules/notifications P1; Gmail/Notion P2 | Tables exist, no handlers yet |
-| DEC-13 | pending | Per-adapter evidence rules not defined | Blocks Phase 4 |
+| DEC-13 | resolved for manual-only JobStreet handoff (2026-11-10) | The owner records the submission time and may add a short confirmation reference; the app labels it owner-reported/manual and does not claim portal verification. No automated evidence capture or reconciliation. | Automated confirmation remains blocked until an authorized interface and its evidence rules are established. |
 | DEC-14 | assumed for P0 | Local text template and dependency-free PDF compiler; immutable application document versions | Verified facts only, owner review before manual submission; visual/ATS acceptance still needs UAT |
 | DEC-15 | assumed for P0 | Only explicitly selected verified facts plus the saved posting are sent for an AI job review | A separate explicit confirmation is required for each request; the model has no submit authority |
-| DEC-16 | pending | First adapter capability not selected | Blocks Phase 4 |
+| DEC-16 | selected, not qualified (2026-11-10) | JobStreet Indonesia (`id.jobstreet.com`), manual handoff only. | Published candidate terms restrict automated access/data gathering unless a specifically permitted interface and its terms apply. No candidate-side API permission or submit capability has been established for this project. Revisit only with explicit authorization and a qualified interface. |
 
 ## Invariants taken from the requirement package
 
 Phase 4 fixture slice (2026-11-10): `local-dummy-v1` is an internal synthetic
 form only. It proves snapshot binding, owner approval, and dry-run persistence;
-it does **not** select an external portal, validate portal permissions, or
-enable browser sessions/dispatch. `fixture:job:<id>` is not a verified live
-target identity. DEC-16 and DEC-13 remain pending.
+it does **not** enable browser sessions/dispatch. `fixture:job:<id>` is not a
+verified live target identity.
+
+JobStreet decision (2026-11-10): JobStreet Indonesia is the first selected
+portal, but only for owner-operated manual handoff. The published [JobStreet
+terms](https://id.jobstreet.com/terms) restrict automated processes and data
+gathering unless a specifically permitted technical interface is used under
+its applicable terms. The public [SEEK Apply with SEEK
+documentation](https://developer.seek.com/use-cases/apply-with-seek) describes
+an authorized hirer/recruitment-software integration and says it must not
+automatically submit on a candidate's behalf; it does not qualify this project
+for candidate-side JobStreet automation. AJSA may open a user-supplied JobStreet
+listing after an explicit click, but does not fetch pages, use cookies, fill
+forms, submit, or inspect Applied Jobs. Manual submission records retain the
+owner's timestamp and optional short reference, clearly labelled as
+owner-reported rather than portal-verified. Automated evidence capture, live
+attempts, and automated reconciliation remain unqualified.
 
 Submission policy UI/API (2026-11-10): the owner may store a quota timezone and
 global/per-source limits in preparation for a later adapter. The settings API
@@ -42,7 +56,9 @@ does not enable browser submission. Internal quota services now reserve at
 approval, revalidate the approved snapshot/current policy at dispatch intent,
 and release reservations on cancellation before intent. They are not wired to
 browser-attempt creation or portal dispatch. Browser enablement remains forced
-off until DEC-16, DEC-13, and live dispatch implementation are complete.
+off. The selected JobStreet flow is not qualified for automated dispatch; it
+requires explicit authorization, a permitted interface, adapter qualification,
+and live evidence rules before that gate can change.
 
 - `submitted_confirmed` requires evidence (BR-12); unknown outcomes never retry
   automatically (BR-13). The queue refuses to auto-retry non-safe task kinds

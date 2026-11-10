@@ -341,9 +341,11 @@ export function applicationListDto(row: ApplicationListRow) {
       location: row.job_location,
       status: row.job_status,
       listingId: row.listing_id,
+      listingUrl: row.listing_url,
     },
     latestAttemptState: row.latest_attempt_state,
     latestSubmittedAt: row.latest_submitted_at?.toISOString() ?? null,
+    latestConfirmationRef: row.latest_confirmation_ref,
   };
 }
 
@@ -357,6 +359,7 @@ export function applicationAttemptDto(row: ApplicationAttemptRow) {
     version: row.version,
     reportedSubmittedAt: row.reported_submitted_at?.toISOString() ?? null,
     confirmationSource: row.confirmation_source,
+    confirmationRef: row.confirmation_ref,
     documentVersionIds: row.document_version_ids,
     errorCode: row.error_code,
     finishedAt: row.finished_at?.toISOString() ?? null,

@@ -44,8 +44,10 @@ export interface ApplicationListRow extends ApplicationRow {
   job_location: string | null;
   job_status: string;
   listing_id: string | null;
+  listing_url: string | null;
   latest_attempt_state: string | null;
   latest_submitted_at: Date | null;
+  latest_confirmation_ref: string | null;
 }
 
 export interface ApplicationAttemptRow {
@@ -117,12 +119,18 @@ const APPLICATION_SELECT = `
          (SELECT l.id FROM job_listings l
            WHERE l.job_id = j.id
            ORDER BY l.retrieved_at DESC LIMIT 1) AS listing_id,
+         (SELECT l.canonical_url FROM job_listings l
+           WHERE l.job_id = j.id
+           ORDER BY l.retrieved_at DESC LIMIT 1) AS listing_url,
          (SELECT x.state FROM application_attempts x
            WHERE x.application_id = a.id
            ORDER BY x.created_at DESC LIMIT 1) AS latest_attempt_state,
          (SELECT x.reported_submitted_at FROM application_attempts x
            WHERE x.application_id = a.id AND x.reported_submitted_at IS NOT NULL
-           ORDER BY x.created_at DESC LIMIT 1) AS latest_submitted_at
+           ORDER BY x.created_at DESC LIMIT 1) AS latest_submitted_at,
+         (SELECT x.confirmation_ref FROM application_attempts x
+            WHERE x.application_id = a.id AND x.confirmation_ref IS NOT NULL
+            ORDER BY x.created_at DESC LIMIT 1) AS latest_confirmation_ref
     FROM applications a
     JOIN jobs j ON j.id = a.job_id
 `;
@@ -343,6 +351,7 @@ export async function updateApplication(
 export interface ManualSubmissionInput {
   listingId: string;
   submittedAt: Date;
+  confirmationRef?: string | null;
   documentVersionsKnown: boolean;
   documentVersionIds: string[];
   expectedVersion?: number;
@@ -485,9 +494,9 @@ export async function recordManualSubmission(
     const attempt = await client.query<ApplicationAttemptRow>(
       `INSERT INTO application_attempts
          (owner_id, application_id, listing_id, target_key, mode, state,
-          reported_submitted_at, confirmation_source, document_version_ids,
+          reported_submitted_at, confirmation_source, confirmation_ref, document_version_ids,
           finished_at)
-       VALUES ($1, $2, $3, $4, 'manual', 'submitted_confirmed', $5, 'manual', $6, now())
+       VALUES ($1, $2, $3, $4, 'manual', 'submitted_confirmed', $5, 'manual', $6, $7, now())
        RETURNING *`,
       [
         ownerId,
@@ -495,6 +504,7 @@ export async function recordManualSubmission(
         input.listingId,
         targetKey,
         input.submittedAt,
+        input.confirmationRef?.trim() || null,
         documentVersionIds,
       ],
     );
@@ -527,6 +537,7 @@ export async function recordManualSubmission(
       details: {
         attemptId: attempt.rows[0]!.id,
         listingId: input.listingId,
+        confirmationReferenceRecorded: Boolean(input.confirmationRef?.trim()),
         documentVersionsKnown: input.documentVersionsKnown,
         documentVersionCount: documentVersionIds.length,
       },

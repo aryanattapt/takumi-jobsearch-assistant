@@ -19,9 +19,11 @@ export interface TrackerApplication {
     location: string | null;
     status: string;
     listingId: string | null;
+    listingUrl: string | null;
   };
   latestAttemptState: string | null;
   latestSubmittedAt: string | null;
+  latestConfirmationRef: string | null;
 }
 
 export interface TrackerJobOption {
@@ -123,6 +125,21 @@ const STAGES = [
 
 const TERMINAL_SUBMISSIONS = ['submitted_confirmed', 'cancelled'];
 
+function jobStreetListingUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    if (
+      (url.protocol !== 'https:' && url.protocol !== 'http:') ||
+      (hostname !== 'jobstreet.com' && !hostname.endsWith('.jobstreet.com'))
+    ) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function statusBadgeClass(status: string): string {
   if (status === 'submitted_confirmed') return 'ok';
   if (status === 'submit_unknown' || status === 'not_submitted') return 'warn';
@@ -143,6 +160,8 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
   const [selectedFacts, setSelectedFacts] = useState<Record<string, string[]>>({});
   const [editedDrafts, setEditedDrafts] = useState<Record<string, string>>({});
   const [selectedSubmissionVersions, setSelectedSubmissionVersions] = useState<Record<string, string[]>>({});
+  const [manualRecordFor, setManualRecordFor] = useState<string | null>(null);
+  const [manualConfirmationRefs, setManualConfirmationRefs] = useState<Record<string, string>>({});
   const [applicationAnswers, setApplicationAnswers] = useState<Record<string, SavedApplicationAnswer[]>>({});
   const [questionDrafts, setQuestionDrafts] = useState<Record<string, string>>({});
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({});
@@ -201,10 +220,6 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
       setError('Lowongan ini tidak punya listing aktif untuk dicatat.');
       return;
     }
-    const confirmed = window.confirm(
-      `Catat "${application.job.title}" sebagai sudah dikirim manual sekarang?\n\nVersi PDF yang dipilih: ${selectedSubmissionVersions[application.id]?.length ?? 0}. Ini hanya mencatat laporan Anda: tidak membuka browser, tidak memakai kuota, dan tidak membuat task.`,
-    );
-    if (!confirmed) return;
     await run(async () => {
       await callApi(`/api/v1/applications/${application.id}/manual-submissions`, {
         method: 'POST',
@@ -214,13 +229,16 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
         body: JSON.stringify({
           listingId: application.job.listingId,
           submittedAt: new Date().toISOString(),
+          confirmationRef: manualConfirmationRefs[application.id]?.trim() || null,
           documentVersionsKnown: (selectedSubmissionVersions[application.id]?.length ?? 0) > 0,
           documentVersionIds: selectedSubmissionVersions[application.id] ?? [],
           expectedVersion: application.version,
         }),
       });
       await fetchApplications();
-      setMessage('Lamaran dicatat sebagai terkirim manual oleh pemilik.');
+      setManualRecordFor(null);
+      setManualConfirmationRefs((current) => ({ ...current, [application.id]: '' }));
+      setMessage('Lamaran dicatat sebagai laporan terkirim manual. Referensi bukti tidak diverifikasi otomatis.');
     });
   }
 
@@ -484,6 +502,7 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
         <ul className="card-list" style={{ marginTop: 14 }}>
           {applications.map((application) => {
             const versions = documentVersions[application.id] ?? [];
+            const jobStreetUrl = jobStreetListingUrl(application.job.listingUrl);
             const latestVersionNo = (kind: 'cv' | 'cover_letter') =>
               Math.max(0, ...versions.filter((item) => item.kind === kind).map((item) => item.versionNo));
             return (
@@ -494,6 +513,14 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
                   {application.job.company}
                   {application.job.location ? ` · ${application.job.location}` : ''}
                 </div>
+                {jobStreetUrl ? (
+                  <p style={{ margin: '4px 0' }}>
+                    <a href={jobStreetUrl} target="_blank" rel="noopener noreferrer">
+                      Buka lowongan di JobStreet
+                    </a>
+                    <span className="muted"> · dibuka hanya setelah Anda klik; AJSA tidak membaca halaman</span>
+                  </p>
+                ) : null}
                 <div className="row" style={{ marginTop: 6 }}>
                   <span className={`badge ${statusBadgeClass(application.submissionStatus)}`}>
                     {application.submissionStatus}
@@ -506,6 +533,11 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
                     </span>
                   ) : null}
                 </div>
+                {application.latestConfirmationRef ? (
+                  <div className="muted" style={{ fontSize: '0.82rem', marginTop: 4 }}>
+                    Referensi owner (belum diverifikasi): {application.latestConfirmationRef}
+                  </div>
+                ) : null}
                 {application.notes ? (
                   <p className="muted" style={{ fontSize: '0.85rem' }}>
                     {application.notes}
@@ -782,7 +814,12 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
                   </select>
                 </div>
                 {!TERMINAL_SUBMISSIONS.includes(application.submissionStatus) ? (
-                  <button onClick={() => recordManual(application)} disabled={busy}>
+                  <button
+                    onClick={() => setManualRecordFor(
+                      manualRecordFor === application.id ? null : application.id,
+                    )}
+                    disabled={busy}
+                  >
                     Catat terkirim
                   </button>
                 ) : null}
@@ -801,6 +838,45 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
                   {openEvents[application.id] ? 'Tutup riwayat' : 'Riwayat'}
                 </button>
               </div>
+              {manualRecordFor === application.id ? (
+                <div className="panel" style={{ marginTop: 12 }}>
+                  <p className="muted">
+                    Pastikan Anda sudah menyelesaikan pengiriman sendiri di JobStreet. Sistem hanya
+                    menyimpan laporan dan tidak membuka sesi, mengisi form, atau memeriksa status portal.
+                  </p>
+                  <label htmlFor={`submission-reference-${application.id}`}>
+                    Referensi konfirmasi (opsional)
+                  </label>
+                  <input
+                    id={`submission-reference-${application.id}`}
+                    type="text"
+                    maxLength={500}
+                    value={manualConfirmationRefs[application.id] ?? ''}
+                    onChange={(event) => setManualConfirmationRefs((current) => ({
+                      ...current,
+                      [application.id]: event.target.value,
+                    }))}
+                    placeholder="Label singkat atau referensi email; jangan masukkan password/OTP"
+                  />
+                  <div className="row" style={{ marginTop: 10 }}>
+                    <button
+                      type="button"
+                      onClick={() => void recordManual(application)}
+                      disabled={busy}
+                    >
+                      Saya sudah mengirim manual
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setManualRecordFor(null)}
+                      disabled={busy}
+                    >
+                      Batal
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </li>
             );
           })}

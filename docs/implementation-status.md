@@ -115,7 +115,7 @@ Requirement traceability (Phase 3 slices):
 
 | Epic | Status | What exists |
 |---|---|---|
-| E10 Browser | Partial, local fixture only | `local-dummy-v1` defines a synthetic form fingerprint. Preflight snapshots bind the application version, listing revision, latest documents, encrypted-answer hashes, and current verification state. No browser profile, cookies, login, OTP/CAPTCHA handling, or network adapter exists. |
+| E10 Browser | Partial, local fixture plus JobStreet manual handoff | `local-dummy-v1` defines a synthetic form fingerprint. Preflight snapshots bind the application version, listing revision, latest documents, encrypted-answer hashes, and current verification state. A JobStreet reference can be opened only by an owner click, and a manual submission can retain an optional confirmation reference. No page fetch, browser profile, cookies, login, OTP/CAPTCHA handling, form fill, or network adapter exists. |
 | E11 Submit | Partial, gated quota and lifecycle services | One active owner approval is version-bound and revalidated against current facts, documents, answers, and posting immediately before reservation and intent. Reservation atomically consumes approval, records global/source quota, and moves the application to `submitting`; intent rechecks current local-day limits and snapshot, then consumes quota. Pre-intent cancellation releases quota and revokes approval; cancellation and intent serialize on the owner submission control. Recovery holds are owner-visible and block intent. Dry-run remains `simulated` with no task/quota side effects. Browser enablement stays fail-closed. Attempt creation, portal dispatch, evidence, and reconciliation are not implemented. |
 
 Verification (local, 2026-11-10):
@@ -138,7 +138,8 @@ Verification (local, 2026-11-10):
 - Submission policy tests verify owner scope, optimistic versioning, audit, IANA
   timezone/limit validation, and rejection of browser activation before adapter qualification.
 - These are local fixture and policy-configuration checks, not live portal UAT.
-  DEC-16 (portal capability) and DEC-13 (per-adapter evidence rules) remain pending.
+  JobStreet is selected only for manual handoff; automated access, dispatch,
+  portal evidence, and reconciliation are not qualified.
 
 Requirement traceability (Phase 4 implemented slices):
 
@@ -148,6 +149,7 @@ Requirement traceability (Phase 4 implemented slices):
 | AC-10 / UAT-18 | Approval binds the snapshot hash and current document/fact/posting state; mutations cause stale review and prevent dry-run. |
 | BR-15 (partial) | Owner can save quota timezone and global/per-source limits. Internal services reserve and consume counters atomically, enforce limits at reservation and intent, handle local-midnight rollover, and release on pre-intent cancellation. Browser enablement remains rejected until adapter qualification. |
 | UAT-41 (partial) | Active recovery holds can be listed with scope/checkpoint metadata for the owner; evidence-based resolution and restored-history verification are not implemented. |
+| BR-12 / UAT-37 (manual path) | A manual submission can store an optional owner-provided confirmation reference; it is not fetched or validated and the result remains labelled owner-reported/manual. |
 | UAT-45–46 (partial) | Integration tests cover available/full quota at local midnight and same-day limit reductions before intent. Broader clock, timezone-change, and live worker scenarios remain untested. |
 | UAT-50 (partial) | Cancellation racing with intent has one transactional winner; expired-approval queue handling and portal outcomes after intent are not implemented. |
 | PR-15 / UAT-54 (partial) | Preflight and dry-run create owner audit events with IDs/counts and no answer/CV payloads. |
@@ -172,7 +174,7 @@ signed off by the owner.
 
 ## Not started yet
 
-- Phase 4 remaining: real portal login/session, adapter qualification and approval gate, browser-attempt creation and worker dispatch, portal evidence/reconciliation, evidence-based recovery-hold resolution, cross-listing target identity, restore-loss recovery, and owner live UAT. Quota and cancellation services are internal gated foundations; the local fixture is not live portal support.
+- Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, portal evidence/reconciliation, evidence-based recovery-hold resolution, cross-listing target identity, restore-loss recovery, and owner live UAT. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
 - Phase 5/6: additional adapters, schedules UI, notifications, Gmail/Notion.
 - Additional provider adapters (Gemini and native Anthropic), live provider credentials, production deployment, and external ATS/client compatibility checks.
 - Owner confirmation of the proposed ranking rubric, live end-to-end/UAT sign-off, and isolated backup restore drill.

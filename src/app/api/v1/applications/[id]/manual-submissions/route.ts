@@ -26,6 +26,7 @@ const ManualSubmissionSchema = z.object({
     .refine((value) => !Number.isNaN(Date.parse(value)), {
       message: 'submittedAt must be an ISO 8601 timestamp',
     }),
+  confirmationRef: z.string().trim().max(500).optional(),
   documentVersionsKnown: z.boolean(),
   documentVersionIds: z.array(z.string().uuid()).max(50).default([]),
   expectedVersion: z.number().int().positive().optional(),
@@ -56,6 +57,7 @@ export const POST = apiRouteCtx<{ params: Promise<{ id: string }> }>(
         applicationId,
         listingId: body.listingId,
         submittedAt: submittedAt.toISOString(),
+        confirmationRef: body.confirmationRef ?? null,
         documentVersionsKnown: body.documentVersionsKnown,
         documentVersionIds: body.documentVersionIds,
         expectedVersion: body.expectedVersion ?? null,
@@ -67,6 +69,7 @@ export const POST = apiRouteCtx<{ params: Promise<{ id: string }> }>(
           {
             listingId: body.listingId,
             submittedAt,
+            confirmationRef: body.confirmationRef,
             documentVersionsKnown: body.documentVersionsKnown,
             documentVersionIds: body.documentVersionIds,
             expectedVersion: body.expectedVersion,
