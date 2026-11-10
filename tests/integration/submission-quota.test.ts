@@ -17,6 +17,19 @@ const SOURCE_CODE = 'fixture-portal';
 const BEFORE_MIDNIGHT = new Date('2026-11-10T16:55:00Z');
 const AFTER_MIDNIGHT = new Date('2026-11-10T17:01:00Z');
 
+async function invalidateApproval(
+  attemptId: string,
+  invalidity: 'expired' | 'revoked',
+  now: Date,
+): Promise<void> {
+  const column = invalidity === 'expired' ? 'expires_at' : 'revoked_at';
+  await getPool().query(
+    `UPDATE approvals SET ${column} = $2::timestamptz
+      WHERE id = (SELECT approval_id FROM application_attempts WHERE id = $1)`,
+    [attemptId, now],
+  );
+}
+
 function applyPostRestoreGuard(checkpointAt: Date): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -459,6 +472,158 @@ describe('submission quota reservation and dispatch intent', () => {
       reservation_state: 'released',
     });
   });
+
+  it.each(['expired', 'revoked'] as const)(
+    'cleans up a %s approval before quota reservation',
+    async (invalidity) => {
+      const owner = await createTestOwner();
+      const fixture = await createAttempt(owner.ownerId, `invalid-before-${invalidity}`);
+      await invalidateApproval(fixture.attemptId, invalidity, BEFORE_MIDNIGHT);
+
+      const result = await reserveAttemptQuota(
+        owner.ownerId,
+        fixture.applicationId,
+        fixture.attemptId,
+        AFTER_MIDNIGHT,
+      );
+
+      const expectedReason = invalidity === 'expired' ? 'APPROVAL_EXPIRED' : 'APPROVAL_REVOKED';
+      expect(result).toMatchObject({
+        reservationId: null,
+        state: 'not_submitted',
+        reason: expectedReason,
+      });
+      const state = await getPool().query<{
+        attempt_state: string;
+        error_code: string;
+        dispatch_intent_at: Date | null;
+        submission_status: string;
+        revoked_at: Date | null;
+        reservation_count: number;
+      }>(
+        `SELECT a.state AS attempt_state, a.error_code, a.dispatch_intent_at,
+                ap.submission_status, approval.revoked_at,
+                (SELECT count(*)::int FROM quota_reservations r WHERE r.attempt_id = a.id)
+                  AS reservation_count
+           FROM application_attempts a
+           JOIN applications ap ON ap.id = a.application_id
+           JOIN approvals approval ON approval.id = a.approval_id
+          WHERE a.id = $1`,
+        [fixture.attemptId],
+      );
+      expect(state.rows[0]).toMatchObject({
+        attempt_state: 'not_submitted',
+        error_code: expectedReason,
+        dispatch_intent_at: null,
+        submission_status: 'not_submitted',
+        reservation_count: 0,
+      });
+      expect(state.rows[0]?.revoked_at).not.toBeNull();
+
+      const records = await getPool().query<{
+        event_reason: string;
+        audit_reason: string;
+        audit_result: string;
+      }>(
+        `SELECT e.reason_code AS event_reason, au.details->>'reason' AS audit_reason,
+                au.result AS audit_result
+           FROM application_events e
+           JOIN audit_events au ON au.entity_id = e.attempt_id::text
+                              AND au.action = 'application.dispatch.blocked'
+          WHERE e.attempt_id = $1 AND e.event_type = 'application.dispatch.blocked'`,
+        [fixture.attemptId],
+      );
+      expect(records.rows).toEqual([{
+        event_reason: expectedReason.toLowerCase(),
+        audit_reason: expectedReason.toLowerCase(),
+        audit_result: 'denied',
+      }]);
+    },
+  );
+
+  it.each(['expired', 'revoked'] as const)(
+    'revokes the %s approval and releases reserved quota before dispatch intent',
+    async (invalidity) => {
+      const owner = await createTestOwner();
+      const fixture = await createAttempt(owner.ownerId, `invalid-after-${invalidity}`);
+      await reserveAttemptQuota(owner.ownerId, fixture.applicationId, fixture.attemptId, BEFORE_MIDNIGHT);
+      await invalidateApproval(fixture.attemptId, invalidity, BEFORE_MIDNIGHT);
+
+      const result = await recordDispatchIntent({
+        ownerId: owner.ownerId,
+        applicationId: fixture.applicationId,
+        attemptId: fixture.attemptId,
+        expectedAttemptVersion: 1,
+        dispatchOwner: 'worker-test-invalid-approval',
+        now: AFTER_MIDNIGHT,
+      });
+
+      const expectedReason = invalidity === 'expired' ? 'APPROVAL_EXPIRED' : 'APPROVAL_REVOKED';
+      expect(result).toMatchObject({
+        state: 'not_submitted',
+        intentRecorded: false,
+        reason: expectedReason,
+        dispatchIntentAt: null,
+      });
+      const state = await getPool().query<{
+        attempt_state: string;
+        error_code: string;
+        dispatch_intent_at: Date | null;
+        submission_status: string;
+        revoked_at: Date | null;
+        reservation_state: string;
+      }>(
+        `SELECT a.state AS attempt_state, a.error_code, a.dispatch_intent_at,
+                ap.submission_status, approval.revoked_at, r.state AS reservation_state
+           FROM application_attempts a
+           JOIN applications ap ON ap.id = a.application_id
+           JOIN approvals approval ON approval.id = a.approval_id
+           JOIN quota_reservations r ON r.attempt_id = a.id
+          WHERE a.id = $1`,
+        [fixture.attemptId],
+      );
+      expect(state.rows[0]).toMatchObject({
+        attempt_state: 'not_submitted',
+        error_code: expectedReason,
+        dispatch_intent_at: null,
+        submission_status: 'not_submitted',
+        reservation_state: 'released',
+      });
+      expect(state.rows[0]?.revoked_at).not.toBeNull();
+
+      const buckets = await getPool().query<{
+        scope: string;
+        reserved_count: number;
+        consumed_count: number;
+      }>(
+        `SELECT scope, reserved_count, consumed_count FROM quota_buckets
+          WHERE owner_id = $1 AND local_date = '2026-11-10'
+          ORDER BY scope`,
+        [owner.ownerId],
+      );
+      expect(buckets.rows).toHaveLength(2);
+      expect(buckets.rows.every((bucket) => bucket.reserved_count === 0 && bucket.consumed_count === 0)).toBe(true);
+
+      const records = await getPool().query<{
+        event_reason: string;
+        audit_reason: string;
+        audit_result: string;
+      }>(
+        `SELECT e.reason_code AS event_reason, au.details->>'reason' AS audit_reason,
+                au.result AS audit_result
+           FROM application_events e
+           JOIN audit_events au ON au.entity_id = e.attempt_id::text
+                              AND au.action = 'application.dispatch.blocked'
+          WHERE e.attempt_id = $1 AND e.event_type = 'application.dispatch.blocked'`,
+        [fixture.attemptId],
+      );
+      expect(records.rows).toEqual([{
+        event_reason: expectedReason.toLowerCase(),
+        audit_reason: expectedReason.toLowerCase(),
+        audit_result: 'denied',
+      }]);
+    },
+  );
 
   it('releases quota on pre-intent cancellation and refuses cancellation after intent', async () => {
     const owner = await createTestOwner();

@@ -143,8 +143,11 @@ Verification (local, 2026-11-10):
   portal evidence, and reconciliation are not qualified.
 - Phase 4 follow-up (2026-11-10): `npm run lint`, `npm run typecheck`, and
   `npm run build` pass after adding pre-intent cleanup for invalid approvals,
-  disabled adapters, and active recovery holds.
-  Tests were not run after this change; UAT-50 regression coverage remains open.
+  disabled adapters, and active recovery holds. Regression tests now cover
+  expired and revoked approvals before quota reservation and before dispatch
+  intent, including terminal state, approval revocation, quota release, events,
+  and audit. The focused quota suite passes (13 tests); the full suite passes
+  (24 files / 140 tests), as do lint and typecheck.
 - Phase 4 follow-up (2026-11-10): added a read-only-by-default post-restore
   guard CLI. With `--apply`, it disables browser submission, creates or
   conservatively widens a global recovery hold under the dispatch control lock,
@@ -181,7 +184,7 @@ Requirement traceability (Phase 4 implemented slices):
 | UAT-47 (partial) | Post-restore guard disables browser submission and creates a global hold. A synthetic cold-copy restore drill verified read-only preview, guarded apply/reapply, recovery of a lost post-checkpoint manual submission, and release with browser submission still disabled. A PostgreSQL integration race test verifies dispatch intent serializes with guard application. Real portal history, pilot backup, quota evidence, and live worker timing remain for owner UAT. |
 | BR-12 / UAT-37 (manual path) | A manual submission can store an optional owner-provided confirmation reference; it is not fetched or validated and the result remains labelled owner-reported/manual. |
 | UAT-45–46 (partial) | Integration tests cover available/full quota at local midnight and same-day limit reductions before intent. Broader clock, timezone-change, and live worker scenarios remain untested. |
-| UAT-50 (partial) | Cancellation and intent serialize on the owner control. Invalid approval or dispatch gate before intent now terminates as `not_submitted` and releases quota; regression coverage and portal outcomes after intent remain open. |
+| UAT-50 (partial) | Cancellation and intent serialize on the owner control. Invalid approval or dispatch gate before intent terminates as `not_submitted` and releases quota. Regression coverage exercises expired and revoked approvals before reservation and before intent, including audit and quota accounting; portal outcomes after intent remain for owner UAT. |
 | PR-15 / UAT-54 (partial) | Preflight and dry-run create owner audit events with IDs/counts and no answer/CV payloads. |
 | UAT-19–22, UAT-28–30, UAT-42–44, UAT-48–49 | Not implemented: live dispatch lifecycle, portal race-stop and automated portal evidence, cross-listing target identity, and live restore-loss recovery. |
 
@@ -204,7 +207,7 @@ signed off by the owner.
 
 ## Not started yet
 
-- Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, automated portal evidence validation, cross-listing target identity, pilot backup/portal restore verification, regression coverage for invalid-approval cleanup, and owner live UAT. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
+- Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, automated portal evidence validation, cross-listing target identity, pilot backup/portal restore verification, and owner live UAT. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
 - Phase 5/6: additional adapters, schedules UI, notifications, Gmail/Notion.
 - Additional provider adapters (Gemini and native Anthropic), live provider credentials, production deployment, and external ATS/client compatibility checks.
 - Owner confirmation of the proposed ranking rubric, live end-to-end/UAT sign-off, and restore drill against the actual pilot backup and portal history.
