@@ -394,8 +394,9 @@ async function getSnapshotCurrentness(
   ownerId: string,
   application: LockedApplication,
   snapshot: ReviewSnapshotRow,
+  now = new Date(),
 ): Promise<boolean> {
-  if (snapshot.invalidated_at || snapshot.valid_until.getTime() <= Date.now()) return false;
+  if (snapshot.invalidated_at || snapshot.valid_until.getTime() <= now.getTime()) return false;
   const content = await loadFixtureContent(
     client,
     ownerId,
@@ -404,6 +405,50 @@ async function getSnapshotCurrentness(
     snapshot.application_version,
   );
   return canonicalHash(content) === snapshot.snapshot_hash;
+}
+
+export async function assertDispatchApprovalCurrent(
+  client: PoolClient,
+  ownerId: string,
+  applicationId: string,
+  snapshotId: string,
+  now = new Date(),
+): Promise<{ listingId: string; targetKey: string }> {
+  const appResult = await client.query<LockedApplication>(
+    `SELECT id, owner_id, job_id, submission_status, current_version
+       FROM applications
+      WHERE id = $1 AND owner_id = $2`,
+    [applicationId, ownerId],
+  );
+  const application = appResult.rows[0];
+  if (!application) throw apiErrors.notFound();
+
+  const snapshotResult = await client.query<ReviewSnapshotRow>(
+    `SELECT * FROM application_review_snapshots
+      WHERE id = $1 AND owner_id = $2 AND application_id = $3`,
+    [snapshotId, ownerId, applicationId],
+  );
+  const snapshot = snapshotResult.rows[0];
+  if (!snapshot) throw conflict('APPROVAL_STALE', 'The approved preflight snapshot is no longer available');
+
+  const latest = await client.query<{ id: string }>(
+    `SELECT id FROM application_review_snapshots
+      WHERE owner_id = $1 AND application_id = $2 AND invalidated_at IS NULL
+      ORDER BY captured_at DESC LIMIT 1`,
+    [ownerId, applicationId],
+  );
+  const expectedVersionDelta = application.submission_status === 'approved' ? 1
+    : application.submission_status === 'submitting' ? 2
+      : null;
+  if (
+    expectedVersionDelta === null ||
+    application.current_version !== snapshot.application_version + expectedVersionDelta ||
+    latest.rows[0]?.id !== snapshot.id ||
+    !(await getSnapshotCurrentness(client, ownerId, application, snapshot, now))
+  ) {
+    throw conflict('APPROVAL_STALE', 'The application or approved preflight snapshot changed before dispatch');
+  }
+  return { listingId: snapshot.listing_id, targetKey: snapshot.target_key };
 }
 
 export async function getApplicationReview(

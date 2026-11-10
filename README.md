@@ -66,9 +66,10 @@ answers, manual tracking, local preflight snapshots, approvals, and dry-runs) â€
   never opens a browser, reads cookies, contacts a portal, sends candidate
   data, or consumes quota.
 - Owners can prepare a global and per-source quota policy with an IANA timezone.
-  The dashboard and API keep browser submission disabled until the first portal
-  adapter and its evidence rules are qualified; these settings do not reserve
-  quota or submit applications.
+  Internal services reserve quota against an approved attempt, recheck the
+  snapshot and current limits before recording dispatch intent, move reservations
+  across local midnight, and release them on pre-intent cancellation. Browser
+  submission remains disabled; these services do not call a portal.
 - Active recovery holds are visible to the owner with their scope and checkpoint
   window. Release controls remain unavailable until the underlying evidence can
   be verified.
@@ -76,9 +77,9 @@ answers, manual tracking, local preflight snapshots, approvals, and dry-runs) â€
   filtering/ranking UI, evaluation details, application tracker UI, and health
   endpoints.
 
-Not built yet: real portal accounts/sessions, live dispatch, quota reservation,
-evidence capture/reconciliation, recovery-hold resolution, schedules UI,
-notifications, and native Gemini/Anthropic adapters. DEC-16 and per-adapter
+Not built yet: real portal accounts/sessions, browser-attempt creation and live
+worker dispatch, evidence capture/reconciliation, recovery-hold resolution,
+schedules UI, notifications, and native Gemini/Anthropic adapters. DEC-16 and per-adapter
 evidence rules remain pending, so the fixture is not a substitute for selecting
 an allowed portal. The local CV/cover template is intentionally plain text;
 visual/ATS acceptance and live end-to-end UAT still need owner sign-off. See the phase table in
@@ -174,6 +175,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | Application drafts | `GET/POST /api/v1/applications/{id}/answers`, `GET/POST /api/v1/applications/{id}/documents`, `PATCH /api/v1/applications/{id}/documents/{versionId}`, `POST /api/v1/applications/{id}/documents/{versionId}/review` |
 | Local Portal Assist fixture | `POST /api/v1/applications/{id}/preflights`, `GET /api/v1/applications/{id}/review`, `POST /api/v1/applications/{id}/approvals`, `POST /api/v1/approvals/{id}/revoke`, `POST /api/v1/applications/{id}/dry-runs` |
 | Submission settings | `GET/PATCH /api/v1/submission-settings` (quota policy only; browser enablement remains blocked) |
+| Attempt cancellation | `POST /api/v1/applications/{id}/attempts/{attemptId}/cancel` (before dispatch intent only) |
 | Recovery holds | `GET /api/v1/submission-recovery/holds` (owner-scoped active hold visibility; resolution is not available) |
 | Tasks | `GET /api/v1/tasks/{id}`, `POST /api/v1/tasks/{id}/cancel` |
 

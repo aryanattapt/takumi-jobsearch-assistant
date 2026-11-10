@@ -37,9 +37,12 @@ enable browser sessions/dispatch. `fixture:job:<id>` is not a verified live
 target identity. DEC-16 and DEC-13 remain pending.
 
 Submission policy UI/API (2026-11-10): the owner may store a quota timezone and
-global/per-source limits in preparation for a later adapter. These settings do
-not reserve or consume quota. Browser enablement remains forced off until DEC-16,
-DEC-13, and live dispatch implementation are complete.
+global/per-source limits in preparation for a later adapter. The settings API
+does not enable browser submission. Internal quota services now reserve at
+approval, revalidate the approved snapshot/current policy at dispatch intent,
+and release reservations on cancellation before intent. They are not wired to
+browser-attempt creation or portal dispatch. Browser enablement remains forced
+off until DEC-16, DEC-13, and live dispatch implementation are complete.
 
 - `submitted_confirmed` requires evidence (BR-12); unknown outcomes never retry
   automatically (BR-13). The queue refuses to auto-retry non-safe task kinds

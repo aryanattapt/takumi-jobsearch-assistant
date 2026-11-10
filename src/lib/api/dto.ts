@@ -31,6 +31,7 @@ import type {
 } from '@/lib/submissions/service';
 import type { SubmissionSettings } from '@/lib/submissions/settings';
 import type { SubmissionRecoveryHold } from '@/lib/submissions/recovery';
+import type { CancelAttemptResult } from '@/lib/submissions/quota';
 import type { FactRow, ProfileWithTimezone } from '@/lib/profile/service';
 import { apiErrors } from '@/lib/http/errors';
 
@@ -454,6 +455,17 @@ export function submissionRecoveryHoldDto(hold: SubmissionRecoveryHold) {
     windowEndAt: hold.window_end_at?.toISOString() ?? null,
     version: hold.version,
     createdAt: hold.created_at.toISOString(),
+  };
+}
+
+export function cancelledAttemptDto(result: CancelAttemptResult) {
+  return {
+    attemptId: result.attemptId,
+    applicationId: result.applicationId,
+    attemptVersion: result.attemptVersion,
+    applicationVersion: result.applicationVersion,
+    state: result.state,
+    reservationReleased: result.reservationReleased,
   };
 }
 
