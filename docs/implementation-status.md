@@ -109,7 +109,7 @@ Requirement traceability (Phase 3 slices):
 | AC-07 / UAT-13–14, UAT-51 | Local CV/cover template uses verified facts only, preserves source versions, and requires review; PDF checks fail closed on invalid text/layout/page limits. Generated claims are not model-invented. |
 | AC-08 / UAT-15 | Application-specific answer snapshots preserve encrypted answer history and fact-version provenance; sensitive/unknown items require explicit owner input. No portal form is filled automatically. |
 | AC-13 / UAT-24, UAT-53–54 | Provider settings are write-only for the key, connection test records selected model/status, AI review requires explicit transfer consent, and audit data excludes prompt/answer/key content; stubbed provider tests cover error/no-fallback paths. |
-| AC-16 / UAT-39–41 | Export includes AI review metadata, decrypted application answer/document drafts and their versions, private PDFs, and excludes provider keys; reset deletes related DB rows/artifacts and revokes exports. Restore/backup retention remains an operational UAT. |
+| AC-16 / UAT-39–41 | Export includes AI review metadata, decrypted application answer/document drafts and their versions, private PDFs, and submission quota buckets/reservations; provider keys stay excluded. Reset deletes related DB rows/artifacts and revokes exports. Restore/backup retention remains an operational UAT. |
 
 ## Phase 4 — Portal Assist P1 (safe preparation slices)
 

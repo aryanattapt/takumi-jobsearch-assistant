@@ -26,8 +26,8 @@ answers, manual tracking, local preflight snapshots, approvals, and dry-runs) â€
 - PostgreSQL-backed worker queue with `FOR UPDATE SKIP LOCKED`, lease tokens
   (fencing), heartbeat, retry/backoff, graceful shutdown, and an expired-lease
   sweep that refuses to auto-retry potentially external tasks.
-- Privacy exports (ZIP + manifest, including evaluation history, 24 h default
-  TTL), document purge with fact retraction, workspace reset that revokes
+- Privacy exports (ZIP + manifest, including evaluation history and submission
+  quota buckets/reservations, 24 h default TTL), document purge with fact retraction, workspace reset that revokes
   exports via privacy generation,
   disables browser submission and opens a global recovery hold.
 - Candidate profile with optimistic versioning and versioned facts

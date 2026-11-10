@@ -172,6 +172,23 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
         ORDER BY created_at`,
       [ownerId],
     );
+    const submissionQuotaBuckets = await query(
+      `SELECT scope, scope_key, local_date, policy_version,
+              reserved_count, consumed_count, created_at, updated_at
+         FROM quota_buckets
+        WHERE owner_id = $1
+        ORDER BY local_date, scope, scope_key`,
+      [ownerId],
+    );
+    const submissionQuotaReservations = await query(
+      `SELECT r.id, r.attempt_id, r.global_bucket_id, r.source_bucket_id,
+              r.reserved_at, r.consumed_at, r.timezone, r.state, r.created_at
+         FROM quota_reservations r
+         JOIN application_attempts a ON a.id = r.attempt_id
+        WHERE a.owner_id = $1
+        ORDER BY r.reserved_at, r.id`,
+      [ownerId],
+    );
     const applicationAnswerRows = await query<{
       id: string;
       application_id: string;
@@ -363,6 +380,10 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
       answers: exportedApplicationAnswers,
       answerVersions: exportedApplicationAnswerVersions,
       documentDraftVersions: exportedApplicationDocuments,
+    });
+    add('submission-quota.json', {
+      buckets: submissionQuotaBuckets,
+      reservations: submissionQuotaReservations,
     });
     add('answers.json', { answers: exportedAnswers });
     add('settings.json', {

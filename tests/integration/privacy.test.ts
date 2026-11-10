@@ -43,11 +43,50 @@ describe('privacy export and workspace reset', () => {
       listingId: phase3.listingId,
       expectedVersion: currentVersion.rows[0]!.current_version,
     });
-    await approveLocalPreflight(owner.ownerId, phase3.applicationId, {
+    const approved = await approveLocalPreflight(owner.ownerId, phase3.applicationId, {
       snapshotId: preflight.snapshot.id,
       snapshotHash: preflight.snapshot.snapshot_hash,
       expectedVersion: preflight.applicationVersion,
     });
+
+    const attempt = await getPool().query<{ id: string }>(
+      `INSERT INTO application_attempts
+         (owner_id, application_id, approval_id, listing_id, target_key, mode, state)
+       VALUES ($1, $2, $3, $4, $5, 'review_before_submit', 'reserved')
+       RETURNING id`,
+      [owner.ownerId, phase3.applicationId, approved.approval.id, phase3.listingId, preflight.snapshot.target_key],
+    );
+    const buckets = await getPool().query<{ id: string; scope: string }>(
+      `INSERT INTO quota_buckets
+         (owner_id, scope, scope_key, local_date, policy_version, reserved_count)
+       VALUES ($1, 'global', '*', '2026-11-10', 2, 1),
+              ($1, 'source', 'manual', '2026-11-10', 2, 1)
+       RETURNING id, scope`,
+      [owner.ownerId],
+    );
+    const globalBucketId = buckets.rows.find((bucket) => bucket.scope === 'global')!.id;
+    const sourceBucketId = buckets.rows.find((bucket) => bucket.scope === 'source')!.id;
+    await getPool().query(
+      `UPDATE approvals SET consumed_at = now() WHERE id = $1`,
+      [approved.approval.id],
+    );
+    await getPool().query(
+      `UPDATE applications SET submission_status = 'submitting', current_version = current_version + 1
+        WHERE id = $1`,
+      [phase3.applicationId],
+    );
+    await getPool().query(
+      `INSERT INTO quota_reservations
+         (attempt_id, global_bucket_id, source_bucket_id, timezone, state)
+       VALUES ($1, $2, $3, 'Asia/Jakarta', 'reserved')`,
+      [attempt.rows[0]!.id, globalBucketId, sourceBucketId],
+    );
+    const otherOwnerId = await insertExtraUser('quota-export-other@example.com');
+    await getPool().query(
+      `INSERT INTO quota_buckets (owner_id, scope, scope_key, local_date, policy_version)
+       VALUES ($1, 'source', 'foreign-owner-private-source', '2026-11-10', 1)`,
+      [otherOwnerId],
+    );
 
     const created = await createExportRequest(owner.ownerId);
     await runExport(owner.ownerId, { privacyRequestId: created.privacyRequestId });
@@ -74,6 +113,11 @@ describe('privacy export and workspace reset', () => {
     expect(text).toContain('approvals');
     expect(text).toContain('local-dummy-v1');
     expect(text).toContain(phase3.applicationId);
+    expect(text).toContain('submission-quota.json');
+    expect(text).toContain('"scope_key": "*"');
+    expect(text).toContain('"reserved_count": 1');
+    expect(text).toContain('"timezone": "Asia/Jakarta"');
+    expect(text).not.toContain('foreign-owner-private-source');
     expect(text).not.toContain('privacy-provider-key-not-real');
   });
 
