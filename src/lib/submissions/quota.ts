@@ -47,12 +47,17 @@ interface ReservationRow {
   state: 'reserved' | 'consumed' | 'released';
 }
 
-export type ApprovalBlockReason =
+export type PreIntentBlockReason =
   | 'APPROVAL_EXPIRED'
   | 'APPROVAL_REVOKED'
   | 'APPROVAL_STALE'
-  | 'APPROVAL_TARGET_MISMATCH';
+  | 'APPROVAL_TARGET_MISMATCH'
+  | 'SUBMISSION_DISABLED'
+  | 'SUBMISSION_ADAPTER_REQUIRED'
+  | 'SUBMISSION_TARGET_REQUIRED'
+  | 'SUBMISSION_RECOVERY_HOLD';
 
+/** A `not_submitted` result is terminal for this attempt; callers must not dispatch it. */
 export type QuotaReservationResult =
   | {
       reservationId: string;
@@ -65,16 +70,17 @@ export type QuotaReservationResult =
       state: 'not_submitted';
       localDate: string;
       timezone: string;
-      reason: ApprovalBlockReason;
+      reason: PreIntentBlockReason;
     };
 
+/** Dispatch only when `intentRecorded` is true. A blocked result is terminal. */
 export interface DispatchIntentResult {
   attemptId: string;
   attemptVersion: number;
   state: 'submitting' | 'not_submitted';
   intentRecorded: boolean;
   localDate: string | null;
-  reason: 'QUOTA_EXCEEDED' | ApprovalBlockReason | null;
+  reason: 'QUOTA_EXCEEDED' | PreIntentBlockReason | null;
   dispatchIntentAt: Date | null;
 }
 
@@ -368,7 +374,7 @@ async function releaseReservation(
   );
 }
 
-async function stopForApprovalBlock(
+async function stopBeforeIntent(
   client: PoolClient,
   input: {
     ownerId: string;
@@ -379,10 +385,10 @@ async function stopForApprovalBlock(
   },
   application: { submission_status: string },
   attempt: AttemptContext,
-  reason: ApprovalBlockReason,
+  reason: PreIntentBlockReason,
   timezone: string,
   now: Date,
-): Promise<{ attemptVersion: number; localDate: string; reason: ApprovalBlockReason }> {
+): Promise<{ attemptVersion: number; localDate: string; reason: PreIntentBlockReason }> {
   if (
     attempt.dispatch_intent_at ||
     !['reserved', 'running'].includes(attempt.state) ||
@@ -459,13 +465,17 @@ async function stopForApprovalBlock(
   };
 }
 
-function getApprovalBlockReason(error: unknown): ApprovalBlockReason | null {
+function getPreIntentBlockReason(error: unknown): PreIntentBlockReason | null {
   if (!(error instanceof ApiError)) return null;
   switch (error.code) {
     case 'APPROVAL_EXPIRED':
     case 'APPROVAL_REVOKED':
     case 'APPROVAL_STALE':
     case 'APPROVAL_TARGET_MISMATCH':
+    case 'SUBMISSION_DISABLED':
+    case 'SUBMISSION_ADAPTER_REQUIRED':
+    case 'SUBMISSION_TARGET_REQUIRED':
+    case 'SUBMISSION_RECOVERY_HOLD':
       return error.code;
     default:
       return null;
@@ -490,8 +500,30 @@ export async function reserveAttemptQuota(
     if (attempt.dispatch_intent_at) {
       throw conflict('DISPATCH_ALREADY_INTENDED', 'Quota cannot be reserved after dispatch intent');
     }
-    const sourceCode = assertDispatchSource(attempt, settings);
-    await assertNoRecoveryHold(client, ownerId, sourceCode, attempt.target_key!);
+    let sourceCode: string;
+    try {
+      sourceCode = assertDispatchSource(attempt, settings);
+      await assertNoRecoveryHold(client, ownerId, sourceCode, attempt.target_key!);
+    } catch (error) {
+      const reason = getPreIntentBlockReason(error);
+      if (!reason) throw error;
+      const stopped = await stopBeforeIntent(
+        client,
+        { ownerId, applicationId, attemptId, actorType: 'system', actorId: 'quota' },
+        application,
+        attempt,
+        reason,
+        settings.quota_timezone,
+        now,
+      );
+      return {
+        reservationId: null,
+        state: 'not_submitted',
+        localDate: stopped.localDate,
+        timezone: settings.quota_timezone,
+        reason: stopped.reason,
+      };
+    }
 
     const existing = await lockReservation(client, attemptId);
     if (existing) {
@@ -529,9 +561,9 @@ export async function reserveAttemptQuota(
         throw conflict('APPROVAL_TARGET_MISMATCH', 'Attempt target does not match the approved preflight snapshot');
       }
     } catch (error) {
-      const reason = getApprovalBlockReason(error);
+      const reason = getPreIntentBlockReason(error);
       if (!reason) throw error;
-      const stopped = await stopForApprovalBlock(
+      const stopped = await stopBeforeIntent(
         client,
         { ownerId, applicationId, attemptId, actorType: 'system', actorId: 'quota' },
         application,
@@ -650,8 +682,38 @@ export async function recordDispatchIntent(input: {
     if (attempt.mode !== 'review_before_submit' || !['reserved', 'running'].includes(attempt.state)) {
       throw conflict('ATTEMPT_STATE_CONFLICT', 'Attempt is not ready for dispatch intent');
     }
-    const sourceCode = assertDispatchSource(attempt, settings);
-    await assertNoRecoveryHold(client, input.ownerId, sourceCode, attempt.target_key!);
+    let sourceCode: string;
+    try {
+      sourceCode = assertDispatchSource(attempt, settings);
+      await assertNoRecoveryHold(client, input.ownerId, sourceCode, attempt.target_key!);
+    } catch (error) {
+      const reason = getPreIntentBlockReason(error);
+      if (!reason) throw error;
+      const stopped = await stopBeforeIntent(
+        client,
+        {
+          ownerId: input.ownerId,
+          applicationId: input.applicationId,
+          attemptId: input.attemptId,
+          actorType: 'worker',
+          actorId: input.dispatchOwner,
+        },
+        application,
+        attempt,
+        reason,
+        settings.quota_timezone,
+        now,
+      );
+      return {
+        attemptId: input.attemptId,
+        attemptVersion: stopped.attemptVersion,
+        state: 'not_submitted',
+        intentRecorded: false,
+        localDate: stopped.localDate,
+        reason: stopped.reason,
+        dispatchIntentAt: null,
+      };
+    }
     try {
       const snapshotId = await lockApproval(
         client,
@@ -672,9 +734,9 @@ export async function recordDispatchIntent(input: {
         throw conflict('APPROVAL_TARGET_MISMATCH', 'Attempt target does not match the approved preflight snapshot');
       }
     } catch (error) {
-      const reason = getApprovalBlockReason(error);
+      const reason = getPreIntentBlockReason(error);
       if (!reason) throw error;
-      return stopForApprovalBlock(
+      const stopped = await stopBeforeIntent(
         client,
         {
           ownerId: input.ownerId,
@@ -688,15 +750,16 @@ export async function recordDispatchIntent(input: {
         reason,
         settings.quota_timezone,
         now,
-      ).then((stopped) => ({
+      );
+      return {
         attemptId: input.attemptId,
         attemptVersion: stopped.attemptVersion,
-        state: 'not_submitted' as const,
+        state: 'not_submitted',
         intentRecorded: false,
         localDate: stopped.localDate,
         reason: stopped.reason,
         dispatchIntentAt: null,
-      }));
+      };
     }
 
     const reservation = await lockReservation(client, input.attemptId);

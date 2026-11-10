@@ -70,9 +70,9 @@ approvals, and dry-runs) — see
 - Owners can prepare a global and per-source quota policy with an IANA timezone.
   Internal services reserve quota against an approved attempt, recheck the
   snapshot and current limits before recording dispatch intent, move reservations
-  across local midnight, and release them on pre-intent cancellation or an
-  invalid approval. Browser submission remains disabled; these services do not
-  call a portal.
+  across local midnight, and release them on pre-intent cancellation or when an
+  approval, adapter, or recovery-hold gate blocks intent. Browser submission
+  remains disabled; these services do not call a portal.
 - Active recovery holds are visible to the owner with their scope and checkpoint
   window. Release controls remain unavailable until the underlying evidence can
   be verified.
