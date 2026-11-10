@@ -131,6 +131,25 @@ export interface WorkspaceAiReview {
   };
 }
 
+export interface WorkspaceSavedSearch {
+  id: string;
+  name: string;
+  filters: {
+    q: string;
+    status: 'active' | 'archived' | 'all';
+    sort: 'recent' | 'score';
+  };
+  sourceCodes: string[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceSourceOption {
+  code: string;
+  name: string;
+}
+
 export interface JobSearchProps {
   csrfToken: string;
   profile: WorkspaceProfile;
@@ -141,6 +160,8 @@ export interface JobSearchProps {
   aiProviderReady: boolean;
   aiProviderModel: string | null;
   savedAiReviews: WorkspaceAiReview[];
+  savedSearches: WorkspaceSavedSearch[];
+  sourceOptions: WorkspaceSourceOption[];
 }
 
 interface ApiEnvelope<T> {
@@ -229,6 +250,10 @@ export default function JobSearch(props: JobSearchProps) {
   const [filterQuery, setFilterQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
   const [sortOrder, setSortOrder] = useState<'recent' | 'score'>('recent');
+  const [sourceCodes, setSourceCodes] = useState<string[]>([]);
+  const [savedSearchName, setSavedSearchName] = useState('');
+  const [selectedSavedSearchId, setSelectedSavedSearchId] = useState('');
+  const [savedSearches, setSavedSearches] = useState(props.savedSearches);
   const [jobs, setJobs] = useState(props.jobs);
   const [duplicates, setDuplicates] = useState(props.duplicates);
   const [selectedAiFactIds, setSelectedAiFactIds] = useState<string[]>([]);
@@ -360,9 +385,14 @@ export default function JobSearch(props: JobSearchProps) {
     });
   }
 
-  async function fetchJobs(): Promise<WorkspaceJob[]> {
-    const params = new URLSearchParams({ status: filterStatus });
-    if (filterQuery.trim()) params.set('q', filterQuery.trim());
+  async function fetchJobs(filters: {
+    q: string;
+    status: string;
+    sourceCodes: string[];
+  } = { q: filterQuery, status: filterStatus, sourceCodes }): Promise<WorkspaceJob[]> {
+    const params = new URLSearchParams({ status: filters.status });
+    if (filters.q.trim()) params.set('q', filters.q.trim());
+    for (const sourceCode of filters.sourceCodes) params.append('source', sourceCode);
     const result = await callApi<{ jobs: WorkspaceJob[] }>(
       `/api/v1/jobs?${params.toString()}`,
       { method: 'GET' },
@@ -442,6 +472,114 @@ export default function JobSearch(props: JobSearchProps) {
       const result = await fetchJobs();
       setJobs(result);
       setMessage(`${result.length} lowongan ditemukan.`);
+    });
+  }
+
+  function currentSavedSearchFilters() {
+    return {
+      q: filterQuery.trim(),
+      status: filterStatus as WorkspaceSavedSearch['filters']['status'],
+      sort: sortOrder,
+    };
+  }
+
+  async function saveSearch(): Promise<void> {
+    const name = savedSearchName.trim();
+    if (!name) {
+      setError('Nama pencarian tersimpan wajib diisi.');
+      return;
+    }
+    await run(async () => {
+      const result = await callApi<{ savedSearch: WorkspaceSavedSearch }>(
+        '/api/v1/saved-searches',
+        {
+          method: 'POST',
+          csrf: props.csrfToken,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            filters: currentSavedSearchFilters(),
+            sourceCodes,
+          }),
+        },
+      );
+      setSavedSearches((current) => [
+        result.savedSearch,
+        ...current.filter((item) => item.id !== result.savedSearch.id),
+      ]);
+      setSelectedSavedSearchId(result.savedSearch.id);
+      setSavedSearchName(result.savedSearch.name);
+      setMessage('Pencarian tersimpan.');
+    });
+  }
+
+  async function applySavedSearch(savedSearch: WorkspaceSavedSearch): Promise<void> {
+    setFilterQuery(savedSearch.filters.q);
+    setFilterStatus(savedSearch.filters.status);
+    setSortOrder(savedSearch.filters.sort);
+    setSourceCodes(savedSearch.sourceCodes);
+    setSelectedSavedSearchId(savedSearch.id);
+    setSavedSearchName(savedSearch.name);
+    await run(async () => {
+      const result = await fetchJobs({
+        q: savedSearch.filters.q,
+        status: savedSearch.filters.status,
+        sourceCodes: savedSearch.sourceCodes,
+      });
+      setJobs(result);
+      setMessage(`${result.length} lowongan ditemukan dari pencarian tersimpan.`);
+    });
+  }
+
+  async function updateSearch(): Promise<void> {
+    const selected = savedSearches.find((item) => item.id === selectedSavedSearchId);
+    if (!selected) {
+      setError('Pilih pencarian tersimpan yang ingin diperbarui.');
+      return;
+    }
+    const name = savedSearchName.trim();
+    if (!name) {
+      setError('Nama pencarian tersimpan wajib diisi.');
+      return;
+    }
+    await run(async () => {
+      const result = await callApi<{ savedSearch: WorkspaceSavedSearch }>(
+        `/api/v1/saved-searches/${selected.id}`,
+        {
+          method: 'PATCH',
+          csrf: props.csrfToken,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            filters: currentSavedSearchFilters(),
+            sourceCodes,
+            expectedVersion: selected.version,
+          }),
+        },
+      );
+      setSavedSearches((current) => current.map((item) =>
+        item.id === result.savedSearch.id ? result.savedSearch : item,
+      ));
+      setMessage('Pencarian tersimpan diperbarui.');
+    });
+  }
+
+  async function removeSearch(): Promise<void> {
+    const selected = savedSearches.find((item) => item.id === selectedSavedSearchId);
+    if (!selected) {
+      setError('Pilih pencarian tersimpan yang ingin dihapus.');
+      return;
+    }
+    if (!window.confirm(`Hapus pencarian "${selected.name}"?`)) return;
+    await run(async () => {
+      await callApi(`/api/v1/saved-searches/${selected.id}`, {
+        method: 'DELETE',
+        csrf: props.csrfToken,
+      });
+      setSavedSearches((current) => current.filter((item) => item.id !== selected.id));
+      setSelectedSavedSearchId('');
+      setSavedSearchName('');
+      setMessage('Pencarian tersimpan dihapus.');
     });
   }
 
@@ -904,6 +1042,66 @@ export default function JobSearch(props: JobSearchProps) {
             Terpilih: {selectedAiFactIds.length} fakta. Provider: {props.aiProviderReady ? `${props.aiProviderModel} siap` : 'belum aktif atau belum lolos tes koneksi'}.
           </p>
         </details>
+        <section className="card" aria-labelledby="saved-searches-heading" style={{ marginTop: 14 }}>
+          <h3 id="saved-searches-heading">Pencarian tersimpan</h3>
+          <div className="row" style={{ alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <label htmlFor="saved-search-picker">Pilih pencarian</label>
+              <select
+                id="saved-search-picker"
+                value={selectedSavedSearchId}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  const selected = savedSearches.find((item) => item.id === id);
+                  setSelectedSavedSearchId(id);
+                  setSavedSearchName(selected?.name ?? '');
+                }}
+              >
+                <option value="">Pilih pencarian tersimpan</option>
+                {savedSearches.map((savedSearch) => (
+                  <option key={savedSearch.id} value={savedSearch.id}>{savedSearch.name}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !selectedSavedSearchId}
+              onClick={() => {
+                const selected = savedSearches.find((item) => item.id === selectedSavedSearchId);
+                if (selected) void applySavedSearch(selected);
+              }}
+            >Terapkan</button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !selectedSavedSearchId}
+              onClick={() => void updateSearch()}
+            >Perbarui</button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !selectedSavedSearchId}
+              onClick={() => void removeSearch()}
+            >Hapus</button>
+          </div>
+          <div className="row" style={{ alignItems: 'flex-end', marginTop: 10 }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <label htmlFor="saved-search-name">Nama pencarian</label>
+              <input
+                id="saved-search-name"
+                type="text"
+                maxLength={100}
+                value={savedSearchName}
+                onChange={(event) => setSavedSearchName(event.target.value)}
+                placeholder="Contoh: Backend Jakarta"
+              />
+            </div>
+            <button type="button" className="secondary" disabled={busy} onClick={() => void saveSearch()}>
+              Simpan sebagai baru
+            </button>
+          </div>
+        </section>
         <form className="row" onSubmit={loadJobs} style={{ alignItems: 'flex-end' }}>
           <div style={{ flex: 1, minWidth: 220 }}>
             <label htmlFor="job-filter">Cari judul, perusahaan, atau deskripsi</label>
@@ -926,6 +1124,26 @@ export default function JobSearch(props: JobSearchProps) {
               <option value="archived">Diarsipkan</option>
               <option value="all">Semua</option>
             </select>
+          </div>
+          <div>
+            <label htmlFor="job-sources">Sumber</label>
+            <select
+              id="job-sources"
+              multiple
+              size={Math.min(Math.max(props.sourceOptions.length, 2), 5)}
+              value={sourceCodes}
+              onChange={(event) => setSourceCodes(
+                Array.from(event.currentTarget.selectedOptions, (option) => option.value),
+              )}
+              aria-describedby="job-sources-help"
+            >
+              {props.sourceOptions.map((source) => (
+                <option key={source.code} value={source.code}>{source.name}</option>
+              ))}
+            </select>
+            <span id="job-sources-help" className="muted" style={{ display: 'block', fontSize: '0.75rem' }}>
+              Kosongkan untuk semua sumber.
+            </span>
           </div>
           <div>
             <label htmlFor="job-sort">Urutkan</label>

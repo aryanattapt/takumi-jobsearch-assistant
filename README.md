@@ -5,11 +5,11 @@ in [`requirement/`](./requirement) and is treated as **read-only source of truth
 implementation decisions and their status are tracked in
 [`docs/decisions.md`](./docs/decisions.md).
 
-Current implementation: **Phase 0–3 P0 plus safe Phase 4 slices**
+Current implementation: **Phase 0–3 P0, safe Phase 4 slices, and Phase 5 provider adapters**
 (private foundation, profile/manual job search, evidence-linked ranking,
 consented AI review, versioned CV/cover PDFs, application-specific screening
-answers, manual tracking, JobStreet manual handoff, local preflight snapshots,
-approvals, and dry-runs) — see
+answers, manual tracking, saved searches, JobStreet manual handoff, local
+preflight snapshots, approvals, and dry-runs) — see
 [`docs/implementation-status.md`](./docs/implementation-status.md).
 
 ## What works today
@@ -48,11 +48,10 @@ approvals, and dry-runs) — see
   profile preferences with a saved posting revision. Dimensions and hard filters
   show evidence, gaps, and unknowns; incomplete dimensions keep the total score
   null and require review. Scores are heuristic match measures, not hiring odds.
-- Optional OpenAI-compatible or native Anthropic provider configured from the dashboard. Its API key
-  is encrypted and never returned; HTTPS endpoint origins are restricted by
-  `AI_ALLOWED_ENDPOINT_ORIGINS`. The OpenAI-compatible and Anthropic native
-  adapters use separate request formats and credentials; a connection test
-  sends a fixed prompt only.
+- Optional OpenAI-compatible, Gemini, or Anthropic provider configured from the
+  dashboard. Its API key is encrypted and never returned; HTTPS endpoints are
+  restricted by `AI_ALLOWED_ENDPOINT_ORIGINS`. A connection test sends a fixed
+  prompt only, and changing provider/model clears its passing test status.
 - AI job review is a separate advisory flow: each run requires explicit consent
   and selected verified profile facts; only those facts and the saved posting are
   sent. Output must cite supplied fact versions and exact posting excerpts, is
@@ -89,9 +88,9 @@ approvals, and dry-runs) — see
   endpoints.
 
 Not built yet: real portal accounts/sessions, browser-attempt creation and live
-worker dispatch, automated portal evidence capture/reconciliation, schedules UI,
-notifications, and the native Gemini adapter. Anthropic support uses mocked
-contract tests only until owner credentials are configured for live UAT.
+worker dispatch, automated portal evidence capture/reconciliation, schedule
+configuration/execution, and notification channels. Saved searches are
+user-triggered filters; saving one does not start a schedule or background search.
 JobStreet is selected for manual handoff only: its published terms restrict
 automated access without a specifically permitted interface and applicable
 terms. The local CV/cover template is intentionally plain text;
@@ -167,7 +166,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_WINDOW_MINUTES` | no | Default 5 / 15 |
 | `STORAGE_MAX_BYTES` | no | Default 10 MiB per upload |
 | `SUBMISSION_SNAPSHOT_TTL_MINUTES` | no | Default 30; provisional local preflight/approval window pending DEC-05 |
-| `AI_ALLOWED_ENDPOINT_ORIGINS` | no | Comma-separated exact HTTPS base URLs permitted for configured AI adapters; defaults to OpenAI and Anthropic official API URLs |
+| `AI_ALLOWED_ENDPOINT_ORIGINS` | no | Comma-separated exact HTTPS base URLs permitted for OpenAI-compatible, Gemini, and Anthropic adapters; defaults to the three official endpoints |
 
 ## API surface (implemented)
 
@@ -179,6 +178,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | Privacy | `POST /api/v1/privacy/exports`, `POST /api/v1/privacy/deletions`, `GET /api/v1/privacy/requests/{id}`, `GET /api/v1/privacy/requests/{id}/download` |
 | Profile | `GET/PATCH /api/v1/profile`, `GET/POST /api/v1/profile/facts`, `PATCH /api/v1/profile/facts/{id}` |
 | Jobs | `GET /api/v1/jobs`, `GET /api/v1/jobs/{id}`, `PATCH /api/v1/jobs/{id}`, `POST /api/v1/jobs/imports` |
+| Saved searches | `GET/POST /api/v1/saved-searches`, `GET/PATCH/DELETE /api/v1/saved-searches/{id}` |
 | Evaluations | `GET/POST /api/v1/jobs/{id}/evaluations`, `GET /api/v1/jobs/{id}/evaluations/{evaluationId}` |
 | AI provider/review | `GET/PUT/POST /api/v1/ai/provider`, `GET/POST /api/v1/jobs/{id}/ai-reviews` |
 | Duplicates | `GET /api/v1/duplicate-suggestions`, `POST /api/v1/duplicate-suggestions/{id}/resolve` |

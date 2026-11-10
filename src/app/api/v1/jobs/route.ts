@@ -18,6 +18,13 @@ export const GET = apiRoute(async (request) => {
     throw apiErrors.validation({ field: 'status', allowed: STATUSES });
   }
   const bookmarkedRaw = url.searchParams.get('bookmarked');
+  const sourceCodes = [...new Set(url.searchParams.getAll('source'))];
+  if (
+    sourceCodes.length > 50 ||
+    sourceCodes.some((code) => !/^[a-z0-9._-]{1,80}$/i.test(code))
+  ) {
+    throw apiErrors.validation({ field: 'source', message: 'Invalid source code filter' });
+  }
   const limitRaw = url.searchParams.get('limit');
   const limit = limitRaw ? Number(limitRaw) : undefined;
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100)) {
@@ -29,7 +36,7 @@ export const GET = apiRoute(async (request) => {
     status: statusRaw as JobStatus | 'all',
     bookmarked:
       bookmarkedRaw === null ? undefined : bookmarkedRaw === 'true',
-    sourceCode: url.searchParams.get('source') ?? undefined,
+    sourceCodes: sourceCodes.length > 0 ? sourceCodes : undefined,
     limit,
   });
 

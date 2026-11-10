@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 
 export interface PublicAiProvider {
   id: string;
-  type: 'openai_compatible' | 'anthropic';
+  type: 'openai_compatible' | 'gemini' | 'anthropic';
   baseUrl: string;
   model: string;
   enabled: boolean;
@@ -115,29 +115,33 @@ export default function AiProviderSettings({ csrfToken, provider }: Props) {
       </div>
       <div className="grid">
         <div>
-          <label htmlFor="ai-provider-type">Adapter</label>
+          <label htmlFor="ai-provider-type">Provider</label>
           <select
             id="ai-provider-type"
             value={type}
             onChange={(event) => {
-              const nextType = event.target.value as PublicAiProvider['type'];
-              setType(nextType);
-              setBaseUrl(nextType === 'anthropic'
+              const next = event.target.value as PublicAiProvider['type'];
+              setType(next);
+              setBaseUrl(next === 'anthropic'
                 ? 'https://api.anthropic.com/v1'
-                : 'https://api.openai.com/v1');
+                : next === 'gemini'
+                  ? 'https://generativelanguage.googleapis.com/v1beta'
+                  : 'https://api.openai.com/v1');
+              setModel(next === 'openai_compatible' ? 'gpt-4o-mini' : '');
             }}
           >
-            <option value="openai_compatible">OpenAI compatible</option>
-            <option value="anthropic">Anthropic native</option>
+            <option value="openai_compatible">OpenAI-compatible</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="anthropic">Anthropic Claude</option>
           </select>
         </div>
         <div>
-          <label htmlFor="ai-base-url">Base URL (HTTPS, allowlisted)</label>
+          <label htmlFor="ai-base-url">Base URL</label>
           <input id="ai-base-url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} maxLength={500} />
         </div>
         <div>
           <label htmlFor="ai-model">Model</label>
-          <input id="ai-model" value={model} onChange={(event) => setModel(event.target.value)} maxLength={200} />
+          <input id="ai-model" value={model} onChange={(event) => setModel(event.target.value)} maxLength={200} required placeholder="Model ID dari akun provider" />
         </div>
         <div>
           <label htmlFor="ai-api-key">API key {provider?.secretConfigured ? '(tersimpan; kosongkan untuk mempertahankan)' : ''}</label>
@@ -169,6 +173,9 @@ export default function AiProviderSettings({ csrfToken, provider }: Props) {
           {provider?.lastTestStatus ? ` · tes ${provider.lastTestStatus}` : ''}
         </span>
       </div>
+      <p className="muted" style={{ fontSize: '0.8rem' }}>
+        Base URL harus HTTPS dan tercantum persis pada AI_ALLOWED_ENDPOINT_ORIGINS. Mengganti provider menghapus status tes; tes ulang memakai prompt tetap tanpa data profil.
+      </p>
     </section>
   );
 }

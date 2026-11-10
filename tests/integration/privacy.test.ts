@@ -7,6 +7,7 @@ import { createFact } from '@/lib/profile/service';
 import { createApplicationDocumentDraft, markApplicationDocumentReviewed } from '@/lib/documents/application-drafts';
 import { saveAiProvider } from '@/lib/ai/providers';
 import { importManualJob } from '@/lib/jobs/service';
+import { createSavedSearch } from '@/lib/jobs/saved-searches';
 import { approveLocalPreflight, createLocalPreflight } from '@/lib/submissions/service';
 import { runExport } from '@/lib/privacy/export';
 import { runWorkspaceReset } from '@/lib/privacy/purge';
@@ -34,6 +35,11 @@ describe('privacy export and workspace reset', () => {
       kind: 'cv',
     });
     const phase3 = await createPhase3Data(owner.ownerId);
+    await createSavedSearch(owner.ownerId, {
+      name: 'Backend export check',
+      filters: { q: 'backend', status: 'active', sort: 'score' },
+      sourceCodes: ['manual'],
+    });
     await markApplicationDocumentReviewed(owner.ownerId, phase3.applicationId, phase3.documentVersionId);
     const currentVersion = await getPool().query<{ current_version: number }>(
       'SELECT current_version FROM applications WHERE id = $1',
@@ -114,6 +120,8 @@ describe('privacy export and workspace reset', () => {
     expect(text).toContain('local-dummy-v1');
     expect(text).toContain(phase3.applicationId);
     expect(text).toContain('submission-quota.json');
+    expect(text).toContain('saved-searches.json');
+    expect(text).toContain('Backend export check');
     expect(text).toContain('"scope_key": "*"');
     expect(text).toContain('"reserved_count": 1');
     expect(text).toContain('"timezone": "Asia/Jakarta"');

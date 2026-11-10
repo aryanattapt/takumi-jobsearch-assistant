@@ -82,6 +82,7 @@ export interface JobFilters {
   status?: JobStatus | 'all';
   bookmarked?: boolean;
   sourceCode?: string;
+  sourceCodes?: string[];
   limit?: number;
 }
 
@@ -149,7 +150,11 @@ export async function listJobs(ownerId: string, filters: JobFilters = {}): Promi
     params.push(filters.bookmarked);
     clauses.push(`j.bookmarked = $${params.length}`);
   }
-  if (filters.sourceCode) {
+  const sourceCodes = [...new Set(filters.sourceCodes ?? [])];
+  if (sourceCodes.length > 0) {
+    params.push(sourceCodes);
+    clauses.push(`s.code = ANY($${params.length}::text[])`);
+  } else if (filters.sourceCode) {
     params.push(filters.sourceCode);
     clauses.push(`s.code = $${params.length}`);
   }

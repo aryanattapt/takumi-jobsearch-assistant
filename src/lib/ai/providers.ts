@@ -6,7 +6,13 @@ import { decryptSecret, encryptSecret } from '@/lib/crypto/secrets';
 import { queryOne, withTransaction } from '@/lib/db/pool';
 import { ApiError, apiErrors } from '@/lib/http/errors';
 
-export type AiProviderType = 'openai_compatible' | 'anthropic';
+export type AiProviderType = 'openai_compatible' | 'gemini' | 'anthropic';
+
+const DEFAULT_BASE_URLS: Record<AiProviderType, string> = {
+  openai_compatible: 'https://api.openai.com/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta',
+  anthropic: 'https://api.anthropic.com/v1',
+};
 
 export interface AiProviderSettings {
   id: string;
@@ -66,14 +72,15 @@ const ProviderResponseSchema = z.object({
 
 const AnthropicResponseSchema = z.object({
   model: z.string().optional(),
-  content: z.array(z.object({
-    type: z.string(),
-    text: z.string().optional(),
-  }).passthrough()).min(1),
-  usage: z.object({
-    input_tokens: z.number().int().nonnegative().optional(),
-    output_tokens: z.number().int().nonnegative().optional(),
-  }).optional(),
+  content: z.array(z.object({ type: z.string(), text: z.string().optional() })).min(1),
+  usage: z.object({ input_tokens: z.number().int().nonnegative().optional(), output_tokens: z.number().int().nonnegative().optional() }).optional(),
+});
+
+const GeminiResponseSchema = z.object({
+  candidates: z.array(z.object({
+    content: z.object({ parts: z.array(z.object({ text: z.string().optional() })).min(1) }),
+  })).min(1),
+  usageMetadata: z.object({ promptTokenCount: z.number().int().nonnegative().optional(), candidatesTokenCount: z.number().int().nonnegative().optional() }).optional(),
 });
 
 function normalizeBaseUrl(value: string): string {
@@ -111,17 +118,11 @@ function normalizeBaseUrl(value: string): string {
   return canonical;
 }
 
-function defaultBaseUrl(type: AiProviderType): string {
-  return type === 'anthropic'
-    ? 'https://api.anthropic.com/v1'
-    : 'https://api.openai.com/v1';
-}
-
 function toSettings(row: AiProviderRow): AiProviderSettings {
   return {
     id: row.id,
     type: row.type,
-    baseUrl: row.base_url ?? defaultBaseUrl(row.type),
+    baseUrl: row.base_url ?? DEFAULT_BASE_URLS[row.type],
     model: row.model,
     enabled: row.enabled,
     secretConfigured: Boolean(row.secret_ciphertext),
@@ -223,7 +224,7 @@ export async function runProviderTest(
   let passed = false;
   try {
     const completion = await requestProviderJson({
-      baseUrl: normalizeBaseUrl(row.base_url ?? defaultBaseUrl(row.type)),
+      baseUrl: normalizeBaseUrl(row.base_url ?? DEFAULT_BASE_URLS[row.type]),
       apiKey: decryptSecret(row.secret_ciphertext),
       model: row.model,
       providerId: row.id,
@@ -272,7 +273,7 @@ export async function completeStructuredJson(
     throw new ApiError(409, 'AI_PROVIDER_NOT_READY', 'AI provider must be enabled and pass its connection test');
   }
   return requestProviderJson({
-    baseUrl: normalizeBaseUrl(row.base_url ?? defaultBaseUrl(row.type)),
+    baseUrl: normalizeBaseUrl(row.base_url ?? DEFAULT_BASE_URLS[row.type]),
     apiKey: decryptSecret(row.secret_ciphertext),
     model: row.model,
     providerId: row.id,
@@ -293,44 +294,62 @@ async function requestProviderJson(input: {
   fetchImpl: typeof fetch;
 }): Promise<ProviderCompletion> {
   const baseUrl = input.baseUrl.endsWith('/') ? input.baseUrl : `${input.baseUrl}/`;
-  const anthropic = input.providerType === 'anthropic';
-  const url = new URL(anthropic ? 'messages' : 'chat/completions', baseUrl);
+  const url = input.providerType === 'gemini'
+    ? new URL(`models/${encodeURIComponent(input.model)}:generateContent`, baseUrl)
+    : new URL(input.providerType === 'anthropic' ? 'messages' : 'chat/completions', baseUrl);
   const started = Date.now();
   let response: Response;
-  try {
-    const headers = new Headers({
+  let requestBody: Record<string, unknown>;
+  let headers: Record<string, string>;
+  if (input.providerType === 'anthropic') {
+    headers = {
+      'x-api-key': input.apiKey,
+      'anthropic-version': '2026-10-21',
       'Content-Type': 'application/json',
       Accept: 'application/json',
-    });
-    if (anthropic) {
-      headers.set('x-api-key', input.apiKey);
-      headers.set('anthropic-version', '2023-06-01');
-    } else {
-      headers.set('Authorization', `Bearer ${input.apiKey}`);
-    }
+    };
+    requestBody = {
+      model: input.model,
+      max_tokens: 1400,
+      temperature: 0,
+      system: `${input.system}\n\nReturn exactly one valid JSON object with no markdown fences.`,
+      messages: [{ role: 'user', content: input.user }],
+    };
+  } else if (input.providerType === 'gemini') {
+    headers = {
+      'x-goog-api-key': input.apiKey,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    requestBody = {
+      systemInstruction: { parts: [{ text: input.system }] },
+      contents: [{ role: 'user', parts: [{ text: input.user }] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 1400, responseMimeType: 'application/json' },
+    };
+  } else {
+    headers = {
+      Authorization: `Bearer ${input.apiKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    requestBody = {
+      model: input.model,
+      temperature: 0,
+      max_tokens: 1400,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: input.system },
+        { role: 'user', content: input.user },
+      ],
+    };
+  }
+  try {
     response = await input.fetchImpl(url, {
       method: 'POST',
       redirect: 'error',
       signal: AbortSignal.timeout(20_000),
       headers,
-      body: JSON.stringify(anthropic
-        ? {
-            model: input.model,
-            temperature: 0,
-            max_tokens: 1400,
-            system: input.system,
-            messages: [{ role: 'user', content: input.user }],
-          }
-        : {
-            model: input.model,
-            temperature: 0,
-            max_tokens: 1400,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: input.system },
-              { role: 'user', content: input.user },
-            ],
-          }),
+      body: JSON.stringify(requestBody),
     });
   } catch {
     throw apiErrors.providerUnavailable('AI provider request failed or timed out');
@@ -345,24 +364,27 @@ async function requestProviderJson(input: {
     throw apiErrors.providerUnavailable('AI provider returned invalid JSON');
   }
   let content: string | undefined;
-  let responseModel: string | undefined;
+  let model = input.model;
   let inputTokens: number | null;
   let outputTokens: number | null;
-  if (anthropic) {
+  if (input.providerType === 'anthropic') {
     const parsed = AnthropicResponseSchema.safeParse(payload);
     if (!parsed.success) throw apiErrors.providerUnavailable('AI provider returned an unsupported response');
-    content = parsed.data.content
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text ?? '')
-      .join('');
-    responseModel = parsed.data.model;
+    content = parsed.data.content.filter((part) => part.type === 'text').map((part) => part.text ?? '').join('').trim();
+    model = parsed.data.model ?? model;
     inputTokens = parsed.data.usage?.input_tokens ?? null;
     outputTokens = parsed.data.usage?.output_tokens ?? null;
+  } else if (input.providerType === 'gemini') {
+    const parsed = GeminiResponseSchema.safeParse(payload);
+    if (!parsed.success) throw apiErrors.providerUnavailable('AI provider returned an unsupported response');
+    content = parsed.data.candidates[0]?.content.parts.map((part) => part.text ?? '').join('').trim();
+    inputTokens = parsed.data.usageMetadata?.promptTokenCount ?? null;
+    outputTokens = parsed.data.usageMetadata?.candidatesTokenCount ?? null;
   } else {
     const parsed = ProviderResponseSchema.safeParse(payload);
     if (!parsed.success) throw apiErrors.providerUnavailable('AI provider returned an unsupported response');
     content = parsed.data.choices[0]?.message.content;
-    responseModel = parsed.data.model;
+    model = parsed.data.model ?? model;
     inputTokens = parsed.data.usage?.prompt_tokens ?? null;
     outputTokens = parsed.data.usage?.completion_tokens ?? null;
   }
@@ -377,7 +399,7 @@ async function requestProviderJson(input: {
     providerId: input.providerId,
     providerType: input.providerType,
     content: JSON.stringify(resultJson),
-    model: responseModel ?? input.model,
+    model,
     inputTokens,
     outputTokens,
     latencyMs: Date.now() - started,

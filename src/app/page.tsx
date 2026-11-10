@@ -24,6 +24,7 @@ import {
   listDuplicateSuggestions,
   listJobs,
 } from '@/lib/jobs/service';
+import { listSavedSearches } from '@/lib/jobs/saved-searches';
 import { getProfile, listFacts } from '@/lib/profile/service';
 import { listApplications } from '@/lib/applications/service';
 import { listAnswers } from '@/lib/answers/service';
@@ -78,6 +79,8 @@ export default async function Page() {
     answers,
     aiProvider,
     savedAiReviews,
+    savedSearches,
+    sources,
     submissionSettings,
   ] = await Promise.all([
     query<DocumentQueryRow>(
@@ -113,6 +116,10 @@ export default async function Page() {
     listAnswers(session.ownerId),
     getAiProvider(session.ownerId),
     listLatestAiJobReviews(session.ownerId),
+    listSavedSearches(session.ownerId),
+    query<{ code: string; name: string }>(
+      'SELECT code, name FROM sources ORDER BY name, code',
+    ),
     getSubmissionSettings(session.ownerId),
   ]);
 
@@ -187,6 +194,16 @@ export default async function Page() {
           aiProviderReady={Boolean(aiProvider?.enabled && aiProvider.lastTestStatus === 'passed')}
           aiProviderModel={aiProvider?.model ?? null}
           savedAiReviews={savedAiReviews.map(aiJobReviewDto)}
+          savedSearches={savedSearches.map((savedSearch) => ({
+            id: savedSearch.id,
+            name: savedSearch.name,
+            filters: savedSearch.filters_json,
+            sourceCodes: savedSearch.source_codes,
+            version: savedSearch.version,
+            createdAt: savedSearch.created_at.toISOString(),
+            updatedAt: savedSearch.updated_at.toISOString(),
+          }))}
+          sourceOptions={sources}
         />
         <AiProviderSettings
           csrfToken={session.csrfToken}

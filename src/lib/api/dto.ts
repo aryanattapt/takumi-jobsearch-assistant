@@ -31,6 +31,7 @@ import type {
 } from '@/lib/submissions/service';
 import type { SubmissionSettings } from '@/lib/submissions/settings';
 import type { SubmissionRecoveryHold } from '@/lib/submissions/recovery';
+import type { SavedSearchRow } from '@/lib/jobs/saved-searches';
 import type { CancelApplicationResult, CancelAttemptResult } from '@/lib/submissions/quota';
 import type { FactRow, ProfileWithTimezone } from '@/lib/profile/service';
 import { apiErrors } from '@/lib/http/errors';
@@ -132,6 +133,18 @@ export function taskDto(row: TaskRecord) {
     lastError: row.last_error,
     createdAt: (row as unknown as { created_at?: Date }).created_at?.toISOString() ?? null,
     finishedAt: (row as unknown as { finished_at?: Date }).finished_at?.toISOString() ?? null,
+  };
+}
+
+export function savedSearchDto(row: SavedSearchRow) {
+  return {
+    id: row.id,
+    name: row.name,
+    filters: row.filters_json,
+    sourceCodes: row.source_codes,
+    version: row.version,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
   };
 }
 

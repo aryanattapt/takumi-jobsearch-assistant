@@ -172,12 +172,6 @@ Verification (local, 2026-11-10):
   intent against the post-restore CLI guard and verifies both valid serialized
   outcomes: intent commits before the guard, or the guard blocks intent and
   releases the pre-intent reservation. Live worker timing remains untested.
-- Phase 5 follow-up (2026-11-10): added the native Anthropic Messages adapter
-  for provider testing and structured JSON completions, including its API-key
-  and version headers, response/token parsing, exact HTTPS endpoint allowlist,
-  dashboard selection, and no-fallback behavior. Integration tests use a fake
-  provider; no live Anthropic credentials were used. `npm test` passes (24
-  files / 141 tests), as do lint, typecheck, and build.
 
 Requirement traceability (Phase 4 implemented slices):
 
@@ -193,6 +187,23 @@ Requirement traceability (Phase 4 implemented slices):
 | UAT-50 (partial) | Cancellation and intent serialize on the owner control. Invalid approval or dispatch gate before intent terminates as `not_submitted` and releases quota. Regression coverage exercises expired and revoked approvals before reservation and before intent, including audit and quota accounting; portal outcomes after intent remain for owner UAT. |
 | PR-15 / UAT-54 (partial) | Preflight and dry-run create owner audit events with IDs/counts and no answer/CV payloads. |
 | UAT-19–22, UAT-28–30, UAT-42–44, UAT-48–49 | Not implemented: live dispatch lifecycle, portal race-stop and automated portal evidence, cross-listing target identity, and live restore-loss recovery. |
+
+## Phase 5 — Perluasan P1 (provider adapter slice)
+
+| Epic | Status | What exists |
+|---|---|---|
+| E06 Saved searches | Partial | Owner-scoped saved-search create/read/update/delete API and dashboard controls to save, load, update, and delete query/status/source/sort filters. Changes are versioned and audited; data is included in workspace exports. No schedule is created or run from a saved search. |
+| E12 AI providers | Partial | Dashboard-configured OpenAI-compatible, native Gemini `generateContent`, and Anthropic Messages adapters. All use a fixed JSON connection test, exact HTTPS base-URL allowlisting, encrypted write-only API keys in provider-specific headers, bounded responses/timeouts, usage-token reporting where available, and no automatic provider fallback. Switching provider/model invalidates the previous passing connection test. |
+
+Verification for this slice:
+
+- Integration tests use mocked provider responses to verify request paths, auth
+  headers, JSON bodies, fixed-prompt tests, structured completion parsing, and
+  token usage. No real provider credentials or candidate data are used.
+- `npm run typecheck` and `npm run lint` pass; the focused provider integration
+  suite passes for all three adapters. The saved-search integration and export
+  coverage pass as part of the full suite (25 files, 144 tests).
+- Live provider account/model compatibility and owner UAT remain unverified.
 
 ## Requirement traceability (foundation)
 
@@ -214,8 +225,9 @@ signed off by the owner.
 ## Not started yet
 
 - Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, automated portal evidence validation, cross-listing target identity, pilot backup/portal restore verification, and owner live UAT. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
-- Phase 5/6: additional portal adapters, saved-search/schedule UI and worker wiring, notifications, Gmail/Notion.
-- Additional provider adapters (Gemini), live provider credentials, production deployment, and external ATS/client compatibility checks. Native Anthropic Messages API support is implemented; it still needs owner credentials and live connection UAT.
+- Phase 5 remaining: schedule configuration/execution, notification channels, and source adapters that pass policy and adapter qualification.
+- Phase 6: Gmail/Notion and learning-plan integrations remain deferred pending owner decisions and privacy review.
+- Live provider credentials, production deployment, and external ATS/client compatibility checks remain open.
 - Owner confirmation of the proposed ranking rubric, live end-to-end/UAT sign-off, and restore drill against the actual pilot backup and portal history.
 
 ## Known gaps / follow-ups
@@ -231,7 +243,8 @@ signed off by the owner.
 - Duplicate detection only compares normalized company + title tokens. It is
   intentionally conservative and only proposes cross-source pairs; Phase 3
   ranking may add a stronger fingerprint.
-- `saved_searches` exists but there is no saved-search UI or schedule wiring yet.
+- Saved searches are owner-triggered filters only; schedule configuration and
+  execution are still open Phase 5 work.
 - Profile facts accept free-form JSON values; type-specific schemas can be added
   when extraction templates are defined.
 - Manual submission uses `target_key = job:<id>`; cross-listing verification and

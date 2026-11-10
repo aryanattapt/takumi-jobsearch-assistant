@@ -121,6 +121,13 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
         ORDER BY j.created_at`,
       [ownerId],
     );
+    const savedSearches = await query(
+      `SELECT id, name, filters_json, source_codes, version, created_at, updated_at
+         FROM saved_searches
+        WHERE owner_id = $1
+        ORDER BY created_at`,
+      [ownerId],
+    );
     const evaluations = await query(
       `SELECT id, job_id, evaluation_version, profile_version,
               posting_revision_id, rubric_version, score_json, score,
@@ -387,6 +394,7 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
     });
     add('documents.json', { documents, documentVersions });
     add('jobs.json', { jobs });
+    add('saved-searches.json', { savedSearches });
     add('evaluations.json', { evaluations });
     add('ai-reviews.json', { reviews: aiJobReviews });
     add('applications.json', {
