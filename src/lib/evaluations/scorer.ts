@@ -323,9 +323,9 @@ export function scoreJob(input: EvaluationInput): EvaluationComputation {
   const experienceScore = candidateYears && required && required.years > 0
     ? Math.min(100, (candidateYears.years / required.years) * 100)
     : null;
-  const experienceReason = experienceScore === null
-    ? 'Butuh fakta pengalaman kerja terverifikasi dengan jumlah tahun dan persyaratan tahun yang tertulis pada posting.'
-    : `Profil mencatat ${candidateYears.years} tahun; posting meminta ${required.years} tahun.`;
+  const experienceReason = candidateYears && required && required.years > 0
+    ? `Profil mencatat ${candidateYears.years} tahun; posting meminta ${required.years} tahun.`
+    : 'Butuh fakta pengalaman kerja terverifikasi dengan jumlah tahun dan persyaratan tahun yang tertulis pada posting.';
   dimensions.push(buildDimension(
     'experience',
     experienceScore,
