@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import SubmissionPreflight from '@/components/submission-preflight';
 
@@ -86,6 +86,16 @@ export interface TrackerEvent {
   occurredAt: string;
 }
 
+interface TrackerRecoveryEvidence {
+  id: string;
+  attemptId: string;
+  kind: string;
+  reference: string | null;
+  source: string;
+  note: string | null;
+  capturedAt: string;
+}
+
 export interface ApplicationTrackerProps {
   csrfToken: string;
   applications: TrackerApplication[];
@@ -155,6 +165,7 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
   const [applications, setApplications] = useState(props.applications);
   const [selectedJob, setSelectedJob] = useState('');
   const [events, setEvents] = useState<Record<string, TrackerEvent[]>>({});
+  const [recoveryEvidence, setRecoveryEvidence] = useState<Record<string, TrackerRecoveryEvidence[]>>({});
   const [openEvents, setOpenEvents] = useState<Record<string, boolean>>({});
   const [documentVersions, setDocumentVersions] = useState<Record<string, ApplicationDocumentVersion[]>>({});
   const [selectedFacts, setSelectedFacts] = useState<Record<string, string[]>>({});
@@ -162,6 +173,10 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
   const [selectedSubmissionVersions, setSelectedSubmissionVersions] = useState<Record<string, string[]>>({});
   const [manualRecordFor, setManualRecordFor] = useState<string | null>(null);
   const [manualConfirmationRefs, setManualConfirmationRefs] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setApplications(props.applications);
+  }, [props.applications]);
   const [applicationAnswers, setApplicationAnswers] = useState<Record<string, SavedApplicationAnswer[]>>({});
   const [questionDrafts, setQuestionDrafts] = useState<Record<string, string>>({});
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({});
@@ -282,11 +297,15 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
       return;
     }
     await run(async () => {
-      const result = await callApi<{ events: TrackerEvent[] }>(
+      const result = await callApi<{
+        events: TrackerEvent[];
+        recoveryEvidence: TrackerRecoveryEvidence[];
+      }>(
         `/api/v1/applications/${application.id}/events`,
         { method: 'GET' },
       );
       setEvents((current) => ({ ...current, [application.id]: result.events }));
+      setRecoveryEvidence((current) => ({ ...current, [application.id]: result.recoveryEvidence }));
       setOpenEvents((current) => ({ ...current, [application.id]: true }));
     });
   }
@@ -795,6 +814,25 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
                       </li>
                     ))}
                   </ul>
+                ) : null}
+                {openEvents[application.id] && recoveryEvidence[application.id]?.length ? (
+                  <div style={{ marginTop: 12 }}>
+                    <h4>Bukti rekonsiliasi recovery</h4>
+                    <ul className="card-list">
+                      {(recoveryEvidence[application.id] ?? []).map((item) => (
+                        <li key={item.id}>
+                          <span>
+                            {item.kind} · {item.source}
+                            {item.reference ? ` · ref ${item.reference}` : ''}
+                            {item.note ? ` · ${item.note}` : ''}
+                          </span>
+                          <span className="muted">
+                            attempt {item.attemptId} · {new Date(item.capturedAt).toLocaleString('id-ID')}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ) : null}
               </div>
               <div className="row" style={{ alignItems: 'flex-start' }}>

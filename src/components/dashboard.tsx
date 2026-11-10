@@ -2,6 +2,9 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useState, type FormEvent, type ReactNode } from 'react';
+import RecoveryHolds, { type DashboardRecoveryHold } from '@/components/recovery-holds';
+
+export type { DashboardRecoveryHold } from '@/components/recovery-holds';
 
 export interface DashboardDocument {
   id: string;
@@ -27,15 +30,6 @@ export interface DashboardTask {
   kind: string;
   state: string;
   lastError: string | null;
-}
-
-export interface DashboardRecoveryHold {
-  id: string;
-  scope: 'global' | 'source' | 'target';
-  scopeKey: string;
-  checkpointAt: string;
-  windowEndAt: string | null;
-  version: number;
 }
 
 export interface DashboardProps {
@@ -241,33 +235,7 @@ export default function Dashboard(props: DashboardProps) {
         </div>
       </section>
 
-      {props.recoveryHolds.length > 0 ? (
-        <section className="panel" aria-labelledby="recovery-holds-title">
-          <h2 id="recovery-holds-title">Recovery hold aktif</h2>
-          <p className="muted">
-            Hold menahan pengiriman baru pada cakupan terkait sampai histori setelah pemulihan
-            diverifikasi. Panel ini hanya untuk melihat status; pelepasan melalui bukti belum
-            tersedia.
-          </p>
-          <ul className="card-list">
-            {props.recoveryHolds.map((hold) => (
-              <li key={hold.id}>
-                <div>
-                  <strong>{hold.scope}{hold.scopeKey ? ` · ${hold.scopeKey}` : ''}</strong>
-                  <div className="muted" style={{ fontSize: '0.85rem' }}>
-                    Checkpoint {new Date(hold.checkpointAt).toLocaleString('id-ID')}
-                    {hold.windowEndAt
-                      ? ` · Batas jendela ${new Date(hold.windowEndAt).toLocaleString('id-ID')}`
-                      : ''}
-                    {' · '}versi {hold.version}
-                  </div>
-                </div>
-                <span className="badge warn">aktif</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <RecoveryHolds holds={props.recoveryHolds} csrfToken={props.csrfToken} />
 
       {props.children}
 

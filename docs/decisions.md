@@ -23,10 +23,11 @@ Status legend: **assumed** = used because the plan needs a concrete default;
 | DEC-10 | assumed | No automatic reapply/withdraw | State machine only allows explicit commands |
 | DEC-11 | assumed | No cookie-sync extension | Not implemented |
 | DEC-12 | assumed | Schedules/notifications P1; Gmail/Notion P2 | Tables exist, no handlers yet |
-| DEC-13 | resolved for manual-only JobStreet handoff (2026-11-10) | The owner records the submission time and may add a short confirmation reference; the app labels it owner-reported/manual and does not claim portal verification. No automated evidence capture or reconciliation. | Automated confirmation remains blocked until an authorized interface and its evidence rules are established. |
+| DEC-13 | resolved for manual-only JobStreet handoff (2026-11-10) | The owner records the submission time and may add a short confirmation reference; the app labels it owner-reported/manual and does not claim portal verification. No automated portal evidence capture or reconciliation. | Automated confirmation remains blocked until an authorized interface and its evidence rules are established. |
 | DEC-14 | assumed for P0 | Local text template and dependency-free PDF compiler; immutable application document versions | Verified facts only, owner review before manual submission; visual/ATS acceptance still needs UAT |
 | DEC-15 | assumed for P0 | Only explicitly selected verified facts plus the saved posting are sent for an AI job review | A separate explicit confirmation is required for each request; the model has no submit authority |
 | DEC-16 | selected, not qualified (2026-11-10) | JobStreet Indonesia (`id.jobstreet.com`), manual handoff only. | Published candidate terms restrict automated access/data gathering unless a specifically permitted interface and its terms apply. No candidate-side API permission or submit capability has been established for this project. Revisit only with explicit authorization and a qualified interface. |
+| DEC-17 | assumed for recovery UX (2026-11-10) | Owner-reviewed manual recovery evidence can reconcile an attempt and release a recovery hold only after scope, external activity, and quota checks are explicitly attested. | Evidence remains labelled manual and is not portal-verified. `unknown` stays locked; post-intent quota remains consumed; releasing a hold never enables browser submission. |
 
 ## Invariants taken from the requirement package
 

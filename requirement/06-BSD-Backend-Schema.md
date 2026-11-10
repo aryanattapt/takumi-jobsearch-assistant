@@ -61,7 +61,7 @@
 | Jadwal | `GET/POST /saved-searches`, `PATCH /saved-searches/{id}`, `GET/POST /schedules`, `PATCH /schedules/{id}`, `GET /schedules/{id}/occurrences` | Jadwal memakai saved search, zona IANA, dan aktivasi eksplisit. |
 | Notifikasi | `GET/POST /notification-channels`, `POST /notification-channels/{id}/test` | Token write-only, kirim test hanya atas perintah pemilik. |
 | Privasi | `POST /privacy/exports`, `POST /privacy/deletions`, `GET /privacy/requests/{id}`, `GET /privacy/requests/{id}/download` | Request terotorisasi dan idempoten. Unduh hanya untuk ekspor aktif. |
-| Recovery | `GET /submission-recovery/holds`, `POST /submission-recovery/holds/{id}/resolve` | Tampilkan cakupan dan jendela restore. Resolusi menerima referensi bukti dan versi hold. Simpan hasil rekonstruksi audit dan status bersama perubahan cakupan hold. Tolak pelepasan pada cakupan yang belum terbukti. |
+| Recovery | `GET /submission-recovery/holds`, `GET /submission-recovery/holds/{id}/attempts`, `POST /submission-recovery/holds/{id}/attempts/{attemptId}`, `POST /submission-recovery/holds/{id}/release` | Owner mencatat hasil per attempt dengan bukti manual. Hasil unknown mempertahankan status dan pengunci. Pelepasan hold memerlukan coverage lengkap, pemeriksaan proses lama/aktivitas eksternal/kuota, tidak ada attempt aktif yang terdampak, dan audit atomik; browser submission tetap nonaktif. |
 | Operasi | `GET /tasks/{id}`, `POST /tasks/{id}/cancel`, `GET /events` | Cancel task generik mengikuti pembatasan per jenis task. Lamaran memakai lifecycle command. |
 | Health | `GET /health/live`, `GET /health/ready` | Tidak mengungkap versi sensitif; akses readiness dibatasi pada deployment. |
 

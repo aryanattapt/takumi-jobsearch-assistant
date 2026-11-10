@@ -87,6 +87,17 @@ export interface ApplicationEventRow {
   occurred_at: Date;
 }
 
+export interface ApplicationRecoveryEvidenceRow {
+  id: string;
+  attempt_id: string;
+  kind: string;
+  provider_ref: string | null;
+  source: 'portal' | 'manual' | 'adapter';
+  reviewer_note: string | null;
+  policy_version: string | null;
+  captured_at: Date;
+}
+
 export interface ApplicationDetail {
   application: ApplicationRow;
   job: {
@@ -724,6 +735,23 @@ export async function listApplicationEvents(
       WHERE application_id = $1
       ORDER BY occurred_at DESC, id DESC`,
     [applicationId],
+  );
+}
+
+export async function listApplicationRecoveryEvidence(
+  ownerId: string,
+  applicationId: string,
+): Promise<ApplicationRecoveryEvidenceRow[]> {
+  await getApplication(ownerId, applicationId);
+  return query<ApplicationRecoveryEvidenceRow>(
+    `SELECT e.id, e.attempt_id, e.kind, e.provider_ref, e.source,
+            e.reviewer_note, e.policy_version, e.captured_at
+       FROM attempt_evidence e
+       JOIN application_attempts a ON a.id = e.attempt_id
+      WHERE a.owner_id = $1 AND a.application_id = $2
+        AND e.kind LIKE 'recovery_%'
+      ORDER BY e.captured_at DESC, e.id DESC`,
+    [ownerId, applicationId],
   );
 }
 

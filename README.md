@@ -73,9 +73,11 @@ approvals, and dry-runs) — see
   across local midnight, and release them on pre-intent cancellation or when an
   approval, adapter, or recovery-hold gate blocks intent. Browser submission
   remains disabled; these services do not call a portal.
-- Active recovery holds are visible to the owner with their scope and checkpoint
-  window. Release controls remain unavailable until the underlying evidence can
-  be verified.
+- Active recovery holds show their scope and checkpoint window. Owners can
+  reconcile affected attempts with explicit manual evidence and release a hold
+  only after checking the full coverage window, external activity, and quota.
+  Unknown outcomes keep the hold active, and releasing it never enables browser
+  submission.
 - Post-restore operator CLI previews the proposed checkpoint window, then can
   disable browser submission and create/widen a global recovery hold under the
   same control-row lock used by dispatch intent. It must be run only after the
@@ -85,8 +87,8 @@ approvals, and dry-runs) — see
   endpoints.
 
 Not built yet: real portal accounts/sessions, browser-attempt creation and live
-worker dispatch, automated evidence capture/reconciliation, recovery-hold
-resolution, schedules UI, notifications, and native Gemini/Anthropic adapters.
+worker dispatch, automated portal evidence capture/reconciliation, schedules UI,
+notifications, and native Gemini/Anthropic adapters.
 JobStreet is selected for manual handoff only: its published terms restrict
 automated access without a specifically permitted interface and applicable
 terms. The local CV/cover template is intentionally plain text;

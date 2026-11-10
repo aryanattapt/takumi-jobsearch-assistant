@@ -98,6 +98,16 @@ Setiap transisi yang bisa beradu dengan worker memeriksa versi dan state di bawa
 
 Keputusan rekrutmen seperti ditolak setelah lamaran diterima tetap dicatat pada tahap rekrutmen. Jika adapter tidak punya cara memastikan hasil negatif setelah intent, opsi membuka retry tidak tersedia. Kriteria dan referensi bukti per adapter dicatat sebelum live UAT pada `DEC-13`.
 
+Untuk rekonsiliasi recovery tanpa adapter bukti yang qualified, dashboard menerima
+laporan manual pemilik dan menampilkannya sebagai manual; aplikasi tidak membuka
+atau memvalidasi halaman portal. Hasil `confirmed_sent` memerlukan kecocokan
+target/akun dan waktu pengiriman yang dicatat. Hasil `confirmed_not_sent`
+memerlukan sesi lama dihentikan serta bukti penolakan otoritatif dan tidak ada
+request tertunda. Hasil `unknown` tetap menahan hold dan pengunci target. Pelepasan
+hold menyimpan cakupan yang ditinjau, referensi bukti, catatan, pemeriksa, dan
+audit. Kuota setelah intent tetap terpakai; pelepasan hold tidak mengaktifkan
+browser submission.
+
 ## 8. SOP operasional
 
 | Kejadian | Tindakan |

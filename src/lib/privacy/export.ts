@@ -155,6 +155,15 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
         ORDER BY e.occurred_at`,
       [ownerId],
     );
+    const applicationRecoveryEvidence = await query(
+      `SELECT e.id, e.attempt_id, e.kind, e.provider_ref, e.source,
+              e.reviewer_note, e.policy_version, e.captured_at
+         FROM attempt_evidence e
+         JOIN application_attempts t ON t.id = e.attempt_id
+        WHERE t.owner_id = $1 AND e.kind LIKE 'recovery_%'
+        ORDER BY e.captured_at, e.id`,
+      [ownerId],
+    );
     const applicationReviewSnapshots = await query(
       `SELECT id, application_id, listing_id, posting_revision_id, target_key,
               form_fingerprint, content, snapshot_hash, application_version,
@@ -187,6 +196,15 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
          JOIN application_attempts a ON a.id = r.attempt_id
         WHERE a.owner_id = $1
         ORDER BY r.reserved_at, r.id`,
+      [ownerId],
+    );
+    const submissionRecoveryHolds = await query(
+      `SELECT id, scope, scope_key, checkpoint_at, window_end_at, status,
+              evidence_ref, coverage_started_at, coverage_ended_at,
+              resolution_note, resolved_by, resolved_at, version, created_at
+         FROM submission_recovery_holds
+        WHERE owner_id = $1
+        ORDER BY created_at, id`,
       [ownerId],
     );
     const applicationAnswerRows = await query<{
@@ -375,6 +393,7 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
       applications,
       attempts: applicationAttempts,
       events: applicationEvents,
+      recoveryEvidence: applicationRecoveryEvidence,
       reviewSnapshots: applicationReviewSnapshots,
       approvals: applicationApprovals,
       answers: exportedApplicationAnswers,
@@ -384,6 +403,7 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
     add('submission-quota.json', {
       buckets: submissionQuotaBuckets,
       reservations: submissionQuotaReservations,
+      recoveryHolds: submissionRecoveryHolds,
     });
     add('answers.json', { answers: exportedAnswers });
     add('settings.json', {
