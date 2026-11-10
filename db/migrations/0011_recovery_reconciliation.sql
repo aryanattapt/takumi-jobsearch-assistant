@@ -17,6 +17,10 @@ ALTER TABLE submission_recovery_holds
         OR coverage_started_at <= coverage_ended_at),
   ADD CONSTRAINT submission_recovery_hold_release_evidence_ck
     CHECK (status <> 'released'
+        OR (resolved_by IS NULL
+            AND resolution_note IS NULL
+            AND coverage_started_at IS NULL
+            AND coverage_ended_at IS NULL)
         OR (evidence_ref IS NOT NULL
             AND resolution_note IS NOT NULL
             AND coverage_started_at IS NOT NULL

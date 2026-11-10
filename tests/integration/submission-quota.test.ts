@@ -18,12 +18,14 @@ const AFTER_MIDNIGHT = new Date('2026-11-10T17:01:00Z');
 
 async function createAttempt(ownerId: string, suffix: string) {
   const pool = getPool();
-  const source = await pool.query<{ id: string }>(
+  await pool.query(
     `INSERT INTO sources (code, name, adapter_version, enabled, capabilities_json, access_policy)
      VALUES ($1, 'Fixture portal', 'fixture-v1', true, '{"submit":true}'::jsonb, 'test-only')
-     ON CONFLICT (code) DO UPDATE
-       SET enabled = true, capabilities_json = '{"submit":true}'::jsonb
-     RETURNING id`,
+     ON CONFLICT (code) DO NOTHING`,
+    [SOURCE_CODE],
+  );
+  const source = await pool.query<{ id: string }>(
+    'SELECT id FROM sources WHERE code = $1',
     [SOURCE_CODE],
   );
   const job = await pool.query<{ id: string }>(
@@ -49,20 +51,38 @@ async function createAttempt(ownerId: string, suffix: string) {
     revision.rows[0]!.id,
   ]);
   const { application } = await createApplication(ownerId, job.rows[0]!.id);
-  const fact = await pool.query<{ id: string }>(
-    `INSERT INTO profile_facts (owner_id, type, verification_status)
-     VALUES ($1, 'skill', 'verified') RETURNING id`,
+  const existingFact = await pool.query<{ id: string; current_version_id: string }>(
+    `SELECT id, current_version_id
+       FROM profile_facts
+      WHERE owner_id = $1 AND type = 'skill' AND verification_status = 'verified'
+        AND current_version_id IS NOT NULL
+      ORDER BY created_at, id
+      LIMIT 1`,
     [ownerId],
   );
-  const factVersion = await pool.query<{ id: string }>(
-    `INSERT INTO profile_fact_versions (owner_id, fact_id, version_no, value, verified_at)
-     VALUES ($1, $2, 1, '{"name":"PostgreSQL"}'::jsonb, now()) RETURNING id`,
-    [ownerId, fact.rows[0]!.id],
-  );
-  await pool.query('UPDATE profile_facts SET current_version_id = $2 WHERE id = $1', [
-    fact.rows[0]!.id,
-    factVersion.rows[0]!.id,
-  ]);
+  let factId: string;
+  let factVersionId: string;
+  if (existingFact.rows[0]) {
+    factId = existingFact.rows[0].id;
+    factVersionId = existingFact.rows[0].current_version_id;
+  } else {
+    const fact = await pool.query<{ id: string }>(
+      `INSERT INTO profile_facts (owner_id, type, verification_status)
+       VALUES ($1, 'skill', 'verified') RETURNING id`,
+      [ownerId],
+    );
+    const factVersion = await pool.query<{ id: string }>(
+      `INSERT INTO profile_fact_versions (owner_id, fact_id, version_no, value, verified_at)
+       VALUES ($1, $2, 1, '{"name":"PostgreSQL"}'::jsonb, now()) RETURNING id`,
+      [ownerId, fact.rows[0]!.id],
+    );
+    factId = fact.rows[0]!.id;
+    factVersionId = factVersion.rows[0]!.id;
+    await pool.query('UPDATE profile_facts SET current_version_id = $2 WHERE id = $1', [
+      factId,
+      factVersionId,
+    ]);
+  }
   const document = await pool.query<{ id: string }>(
     `INSERT INTO documents (owner_id, kind, object_key, original_name, media_type, sha256, size_bytes)
      VALUES ($1, 'cv', $2, 'fixture.pdf', 'application/pdf', $3, 128) RETURNING id`,
@@ -73,7 +93,7 @@ async function createAttempt(ownerId: string, suffix: string) {
        (owner_id, application_id, document_id, kind, version_no, content_hash,
         template_id, fact_version_ids)
      VALUES ($1, $2, $3, 'cv', 1, $4, 'fixture', $5) RETURNING id`,
-    [ownerId, application.id, document.rows[0]!.id, suffix.repeat(64).slice(0, 64), [factVersion.rows[0]!.id]],
+    [ownerId, application.id, document.rows[0]!.id, suffix.repeat(64).slice(0, 64), [factVersionId]],
   );
   await pool.query(
     `INSERT INTO application_document_versions
@@ -82,7 +102,7 @@ async function createAttempt(ownerId: string, suffix: string) {
         pdf_status, pdf_check, reviewed_at)
      VALUES ($1, $2, 'cv', 1, $3, $4, $5, $6, 'passed',
              '{"pageCount":1,"textLayerPresent":true,"layoutWithinPage":true}'::jsonb, now())`,
-    [ownerId, application.id, encryptSecret('Synthetic reviewed CV'), [factVersion.rows[0]!.id], document.rows[0]!.id, documentVersion.rows[0]!.id],
+    [ownerId, application.id, encryptSecret('Synthetic reviewed CV'), [factVersionId], document.rows[0]!.id, documentVersion.rows[0]!.id],
   );
   const preflight = await createLocalPreflight(ownerId, application.id, {
     listingId: listing.rows[0]!.id,
@@ -125,7 +145,7 @@ async function createAttempt(ownerId: string, suffix: string) {
     applicationId: application.id,
     attemptId: attempt.rows[0]!.id,
     targetKey: preflight.snapshot.target_key,
-    factId: fact.rows[0]!.id,
+    factId,
   };
 }
 
@@ -296,14 +316,20 @@ describe('submission quota reservation and dispatch intent', () => {
       [owner.ownerId, BEFORE_MIDNIGHT],
     );
 
-    await expect(recordDispatchIntent({
+    const result = await recordDispatchIntent({
       ownerId: owner.ownerId,
       applicationId: fixture.applicationId,
       attemptId: fixture.attemptId,
       expectedAttemptVersion: 1,
       dispatchOwner: 'worker-test-hold',
       now: BEFORE_MIDNIGHT,
-    })).rejects.toMatchObject({ code: 'SUBMISSION_RECOVERY_HOLD' });
+    });
+    expect(result).toMatchObject({
+      state: 'not_submitted',
+      intentRecorded: false,
+      reason: 'SUBMISSION_RECOVERY_HOLD',
+      dispatchIntentAt: null,
+    });
     const state = await getPool().query<{ state: string; reserved_count: number; consumed_count: number }>(
       `SELECT r.state, q.reserved_count, q.consumed_count
          FROM quota_reservations r
@@ -311,7 +337,7 @@ describe('submission quota reservation and dispatch intent', () => {
         WHERE r.attempt_id = $1`,
       [fixture.attemptId],
     );
-    expect(state.rows[0]).toMatchObject({ state: 'reserved', reserved_count: 1, consumed_count: 0 });
+    expect(state.rows[0]).toMatchObject({ state: 'released', reserved_count: 0, consumed_count: 0 });
   });
 
   it('blocks dispatch when approved facts change after quota reservation', async () => {
@@ -323,14 +349,20 @@ describe('submission quota reservation and dispatch intent', () => {
       [fixture.factId],
     );
 
-    await expect(recordDispatchIntent({
+    const result = await recordDispatchIntent({
       ownerId: owner.ownerId,
       applicationId: fixture.applicationId,
       attemptId: fixture.attemptId,
       expectedAttemptVersion: 1,
       dispatchOwner: 'worker-test-stale-snapshot',
       now: BEFORE_MIDNIGHT,
-    })).rejects.toMatchObject({ code: 'APPROVAL_STALE' });
+    });
+    expect(result).toMatchObject({
+      state: 'not_submitted',
+      intentRecorded: false,
+      reason: 'APPROVAL_STALE',
+      dispatchIntentAt: null,
+    });
 
     const state = await getPool().query<{
       state: string;
@@ -344,9 +376,9 @@ describe('submission quota reservation and dispatch intent', () => {
       [fixture.attemptId],
     );
     expect(state.rows[0]).toEqual({
-      state: 'reserved',
+      state: 'not_submitted',
       dispatch_intent_at: null,
-      reservation_state: 'reserved',
+      reservation_state: 'released',
     });
   });
 
