@@ -68,7 +68,7 @@ Requirement traceability (Phase 2):
 
 | Epic | Status | What exists |
 |---|---|---|
-| E09 Tracker | Done for P0 manual path | One draft application per job, owner notes with `current_version`, manual submission records (`mode=manual`, `state=submitted_confirmed`, `confirmation_source=manual`), target lock per job, separation from recruitment stage, timeline events, no worker task/quota consumption, deterministic conflict when a `submit_unknown` attempt exists. Submission records may attach only reviewed, latest document versions belonging to that application. |
+| E09 Tracker | Done for P0 manual path | One draft application per job, owner notes with `current_version`, manual submission records (`mode=manual`, `state=submitted_confirmed`, `confirmation_source=manual`), target lock per job, separation from recruitment stage, timeline events, no worker task/quota consumption, deterministic conflict when a `submit_unknown` attempt exists, and versioned reopen from `cancelled` to `draft` or `not_submitted` to `ready_for_review`. Reopen blocks when a matching target is unknown or already confirmed. Submission records may attach only reviewed, latest document versions belonging to that application. |
 | E08 Documents/Q&A | Done for P0 local path | CV/cover drafts use only explicitly selected verified facts, retain source fact-version IDs, support immutable edits and owner review, and generate private PDFs with text-layer, structure, page-count and layout checks. Application-scoped screening answers have encrypted content, immutable history and provenance; sensitive/unknown questions require owner input. No portal autofill. |
 | E07 AI/evaluation | Done for P0 with owner review outstanding | Local evidence-based scoring remains deterministic and provisional. Dashboard-configured OpenAI-compatible provider supports a fixed connection test and separately consented job review using only selected verified facts plus the saved posting. API key is encrypted, write-only, endpoint origins are allowlisted, output is schema/evidence checked, and no fallback or submit authority exists. |
 
@@ -132,7 +132,8 @@ Verification (local, 2026-11-10):
   submission-settings tests — 1 file / 5 tests pass.
 - Recovery-hold visibility tests — 1 file / 2 tests pass.
 - Quota reservation/intent/cancel tests — 1 file / 8 tests pass.
-- `npm test` — 24 files / 132 tests pass.
+- Application lifecycle/reopen tests — 1 file / 10 tests pass.
+- `npm test` — 24 files / 134 tests pass.
 - `npm run build` — pass with the production Webpack build.
 - Submission policy tests verify owner scope, optimistic versioning, audit, IANA
   timezone/limit validation, and rejection of browser activation before adapter qualification.

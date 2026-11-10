@@ -603,6 +603,106 @@ export async function updateRecruitmentStage(
   });
 }
 
+export async function reopenApplication(
+  ownerId: string,
+  applicationId: string,
+  expectedVersion: number,
+  requestId?: string,
+): Promise<ApplicationRow> {
+  return withTransaction(async (client) => {
+    // Match the submission lock order so a reopen cannot race an intent.
+    await lockSubmissionControl(client, ownerId);
+    const application = await lockApplication(client, ownerId, applicationId);
+    if (application.current_version !== expectedVersion) throw apiErrors.versionConflict();
+
+    const nextStatus: SubmissionStatus | null = application.submission_status === 'cancelled'
+      ? 'draft'
+      : application.submission_status === 'not_submitted'
+        ? 'ready_for_review'
+        : null;
+    if (!nextStatus) {
+      throw new ApiError(
+        409,
+        'APPLICATION_STATE_CONFLICT',
+        'Only cancelled or not_submitted applications can be reopened',
+        { currentStatus: application.submission_status },
+      );
+    }
+
+    const activeAttempt = await client.query<{ id: string }>(
+      `SELECT id FROM application_attempts
+        WHERE owner_id = $1 AND application_id = $2
+          AND state IN ('reserved', 'running', 'submitting')
+        LIMIT 1 FOR UPDATE`,
+      [ownerId, applicationId],
+    );
+    if (activeAttempt.rowCount) {
+      throw new ApiError(409, 'ACTIVE_ATTEMPT_BLOCKS_REOPEN', 'Resolve the active attempt before reopening');
+    }
+
+    const blockedTarget = await client.query<{ id: string; state: string }>(
+      `SELECT a.id, a.state
+         FROM application_attempts a
+        WHERE a.owner_id = $1
+          AND a.state IN ('submit_unknown', 'submitted_confirmed')
+          AND (
+            a.application_id = $2
+            OR a.target_key IN (
+              SELECT target_key FROM application_attempts
+               WHERE owner_id = $1 AND application_id = $2 AND target_key IS NOT NULL
+            )
+          )
+        ORDER BY a.id
+        LIMIT 1 FOR SHARE OF a`,
+      [ownerId, applicationId],
+    );
+    if (blockedTarget.rowCount) {
+      throw new ApiError(
+        409,
+        'TARGET_REQUIRES_RECONCILIATION',
+        'A target with an unknown or confirmed submission cannot be reopened',
+        { attemptId: blockedTarget.rows[0]!.id, state: blockedTarget.rows[0]!.state },
+      );
+    }
+
+    await client.query(
+      `UPDATE approvals SET revoked_at = COALESCE(revoked_at, now())
+        WHERE owner_id = $1 AND application_id = $2 AND revoked_at IS NULL`,
+      [ownerId, applicationId],
+    );
+    const updated = await client.query<ApplicationRow>(
+      `UPDATE applications
+          SET submission_status = $3, current_version = current_version + 1,
+              updated_at = now()
+        WHERE id = $1 AND owner_id = $2
+        RETURNING *`,
+      [applicationId, ownerId, nextStatus],
+    );
+    await client.query(
+      `INSERT INTO application_events
+         (application_id, event_type, from_state, to_state, actor_type, actor_id, reason_code)
+       VALUES ($1, 'application.reopened', $2, $3, 'owner', $4, 'owner_reopened')`,
+      [applicationId, application.submission_status, nextStatus, ownerId],
+    );
+    await recordAudit(client, {
+      ownerId,
+      actorType: 'owner',
+      actorId: ownerId,
+      action: 'application.reopened',
+      entityType: 'application',
+      entityId: applicationId,
+      result: 'success',
+      requestId: requestId ?? null,
+      details: {
+        fromStatus: application.submission_status,
+        toStatus: nextStatus,
+        version: updated.rows[0]!.current_version,
+      },
+    });
+    return updated.rows[0]!;
+  });
+}
+
 export async function listApplicationEvents(
   ownerId: string,
   applicationId: string,
@@ -628,4 +728,12 @@ async function lockApplication(
   const row = result.rows[0];
   if (!row) throw apiErrors.notFound();
   return row;
+}
+
+async function lockSubmissionControl(client: PoolClient, ownerId: string): Promise<void> {
+  const result = await client.query(
+    `SELECT owner_id FROM submission_controls WHERE owner_id = $1 FOR UPDATE`,
+    [ownerId],
+  );
+  if (!result.rowCount) throw apiErrors.internal();
 }

@@ -7,6 +7,7 @@ import {
   listApplicationEvents,
   listApplications,
   recordManualSubmission,
+  reopenApplication,
   updateApplication,
   updateRecruitmentStage,
 } from '@/lib/applications/service';
@@ -84,6 +85,90 @@ describe('application tracker and manual submission', () => {
         expectedVersion: 1,
       }),
     ).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+  });
+
+  it('reopens cancelled applications as drafts and failed submissions for a new review', async () => {
+    const owner = await createTestOwner();
+    const cancelledJob = await createJob(owner.ownerId, 'Cancelled application');
+    const cancelled = await createApplication(owner.ownerId, cancelledJob.jobId);
+    await getPool().query(
+      `UPDATE applications SET submission_status = 'cancelled', current_version = 2 WHERE id = $1`,
+      [cancelled.application.id],
+    );
+
+    const reopenedDraft = await reopenApplication(owner.ownerId, cancelled.application.id, 2);
+    expect(reopenedDraft).toMatchObject({ submission_status: 'draft', current_version: 3 });
+
+    const failedJob = await createJob(owner.ownerId, 'Previously failed application');
+    const failed = await createApplication(owner.ownerId, failedJob.jobId);
+    await getPool().query(
+      `UPDATE applications SET submission_status = 'not_submitted', current_version = 2 WHERE id = $1`,
+      [failed.application.id],
+    );
+    await expect(reopenApplication(owner.ownerId, failed.application.id, 1))
+      .rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+    const reopenedReview = await reopenApplication(owner.ownerId, failed.application.id, 2);
+    expect(reopenedReview).toMatchObject({
+      submission_status: 'ready_for_review',
+      current_version: 3,
+    });
+
+    const events = await listApplicationEvents(owner.ownerId, failed.application.id);
+    expect(events[0]).toMatchObject({
+      event_type: 'application.reopened',
+      from_state: 'not_submitted',
+      to_state: 'ready_for_review',
+      actor_type: 'owner',
+    });
+  });
+
+  it('blocks reopening when the same target has an unknown or confirmed attempt', async () => {
+    const owner = await createTestOwner();
+    const firstJob = await createJob(owner.ownerId, 'Failed target');
+    const failed = await createApplication(owner.ownerId, firstJob.jobId);
+    await getPool().query(
+      `UPDATE applications SET submission_status = 'not_submitted', current_version = 2 WHERE id = $1`,
+      [failed.application.id],
+    );
+    await getPool().query(
+      `INSERT INTO application_attempts
+         (owner_id, application_id, target_key, mode, state)
+       VALUES ($1, $2, 'portal:target-42', 'manual', 'not_submitted')`,
+      [owner.ownerId, failed.application.id],
+    );
+
+    const secondJob = await createJob(owner.ownerId, 'Uncertain target');
+    const uncertain = await createApplication(owner.ownerId, secondJob.jobId);
+    const blocker = await getPool().query<{ id: string }>(
+      `INSERT INTO application_attempts
+         (owner_id, application_id, target_key, mode, state)
+       VALUES ($1, $2, 'portal:target-42', 'manual', 'submit_unknown')
+       RETURNING id`,
+      [owner.ownerId, uncertain.application.id],
+    );
+
+    await expect(reopenApplication(owner.ownerId, failed.application.id, 2))
+      .rejects.toMatchObject({ code: 'TARGET_REQUIRES_RECONCILIATION' });
+    const unchanged = await getPool().query<{ submission_status: string; current_version: number }>(
+      `SELECT submission_status, current_version FROM applications WHERE id = $1`,
+      [failed.application.id],
+    );
+    expect(unchanged.rows[0]).toEqual({ submission_status: 'not_submitted', current_version: 2 });
+    expect(blocker.rows[0]?.id).toBeTruthy();
+
+    const ownUnknownJob = await createJob(owner.ownerId, 'Own uncertain target');
+    const ownUnknown = await createApplication(owner.ownerId, ownUnknownJob.jobId);
+    await getPool().query(
+      `UPDATE applications SET submission_status = 'not_submitted', current_version = 2 WHERE id = $1`,
+      [ownUnknown.application.id],
+    );
+    await getPool().query(
+      `INSERT INTO application_attempts (owner_id, application_id, mode, state)
+       VALUES ($1, $2, 'manual', 'submit_unknown')`,
+      [owner.ownerId, ownUnknown.application.id],
+    );
+    await expect(reopenApplication(owner.ownerId, ownUnknown.application.id, 2))
+      .rejects.toMatchObject({ code: 'TARGET_REQUIRES_RECONCILIATION' });
   });
 
   it('records a manual submission without worker tasks or quota', async () => {
