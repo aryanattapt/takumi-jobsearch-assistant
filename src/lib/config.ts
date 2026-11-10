@@ -17,9 +17,11 @@ const EnvSchema = z.object({
   IDEMPOTENCY_TTL_HOURS: z.coerce.number().int().min(1).max(720).default(168),
   // Provisional owner-review window; DEC-05 remains pending.
   SUBMISSION_SNAPSHOT_TTL_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),
-  // Exact origins allowed for owner-configured OpenAI-compatible providers.
+  // Exact base URLs allowed for owner-configured AI providers.
   // This prevents a saved provider URL from becoming an arbitrary SSRF target.
-  AI_ALLOWED_ENDPOINT_ORIGINS: z.string().default('https://api.openai.com/v1'),
+  AI_ALLOWED_ENDPOINT_ORIGINS: z.string().default(
+    'https://api.openai.com/v1,https://api.anthropic.com/v1',
+  ),
 });
 
 export type AppConfig = z.infer<typeof EnvSchema>;

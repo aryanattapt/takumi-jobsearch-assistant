@@ -48,9 +48,11 @@ approvals, and dry-runs) — see
   profile preferences with a saved posting revision. Dimensions and hard filters
   show evidence, gaps, and unknowns; incomplete dimensions keep the total score
   null and require review. Scores are heuristic match measures, not hiring odds.
-- Optional OpenAI-compatible provider configured from the dashboard. Its API key
+- Optional OpenAI-compatible or native Anthropic provider configured from the dashboard. Its API key
   is encrypted and never returned; HTTPS endpoint origins are restricted by
-  `AI_ALLOWED_ENDPOINT_ORIGINS`. A connection test sends a fixed prompt only.
+  `AI_ALLOWED_ENDPOINT_ORIGINS`. The OpenAI-compatible and Anthropic native
+  adapters use separate request formats and credentials; a connection test
+  sends a fixed prompt only.
 - AI job review is a separate advisory flow: each run requires explicit consent
   and selected verified profile facts; only those facts and the saved posting are
   sent. Output must cite supplied fact versions and exact posting excerpts, is
@@ -88,7 +90,8 @@ approvals, and dry-runs) — see
 
 Not built yet: real portal accounts/sessions, browser-attempt creation and live
 worker dispatch, automated portal evidence capture/reconciliation, schedules UI,
-notifications, and native Gemini/Anthropic adapters.
+notifications, and the native Gemini adapter. Anthropic support uses mocked
+contract tests only until owner credentials are configured for live UAT.
 JobStreet is selected for manual handoff only: its published terms restrict
 automated access without a specifically permitted interface and applicable
 terms. The local CV/cover template is intentionally plain text;
@@ -164,7 +167,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_WINDOW_MINUTES` | no | Default 5 / 15 |
 | `STORAGE_MAX_BYTES` | no | Default 10 MiB per upload |
 | `SUBMISSION_SNAPSHOT_TTL_MINUTES` | no | Default 30; provisional local preflight/approval window pending DEC-05 |
-| `AI_ALLOWED_ENDPOINT_ORIGINS` | no | Comma-separated exact HTTPS base URLs permitted for the OpenAI-compatible adapter; defaults to `https://api.openai.com/v1` |
+| `AI_ALLOWED_ENDPOINT_ORIGINS` | no | Comma-separated exact HTTPS base URLs permitted for configured AI adapters; defaults to OpenAI and Anthropic official API URLs |
 
 ## API surface (implemented)
 

@@ -6,7 +6,7 @@ import { decryptSecret, encryptSecret } from '@/lib/crypto/secrets';
 import { queryOne, withTransaction } from '@/lib/db/pool';
 import { ApiError, apiErrors } from '@/lib/http/errors';
 
-export type AiProviderType = 'openai_compatible';
+export type AiProviderType = 'openai_compatible' | 'anthropic';
 
 export interface AiProviderSettings {
   id: string;
@@ -64,6 +64,18 @@ const ProviderResponseSchema = z.object({
   }).optional(),
 });
 
+const AnthropicResponseSchema = z.object({
+  model: z.string().optional(),
+  content: z.array(z.object({
+    type: z.string(),
+    text: z.string().optional(),
+  }).passthrough()).min(1),
+  usage: z.object({
+    input_tokens: z.number().int().nonnegative().optional(),
+    output_tokens: z.number().int().nonnegative().optional(),
+  }).optional(),
+});
+
 function normalizeBaseUrl(value: string): string {
   let url: URL;
   try {
@@ -99,11 +111,17 @@ function normalizeBaseUrl(value: string): string {
   return canonical;
 }
 
+function defaultBaseUrl(type: AiProviderType): string {
+  return type === 'anthropic'
+    ? 'https://api.anthropic.com/v1'
+    : 'https://api.openai.com/v1';
+}
+
 function toSettings(row: AiProviderRow): AiProviderSettings {
   return {
     id: row.id,
     type: row.type,
-    baseUrl: row.base_url ?? 'https://api.openai.com/v1',
+    baseUrl: row.base_url ?? defaultBaseUrl(row.type),
     model: row.model,
     enabled: row.enabled,
     secretConfigured: Boolean(row.secret_ciphertext),
@@ -201,12 +219,11 @@ export async function runProviderTest(
     [ownerId],
   );
   if (!row || !row.secret_ciphertext) throw apiErrors.invalidInput('Configure an API key first');
-  if (row.type !== 'openai_compatible') throw apiErrors.invalidInput('This provider adapter is not available yet');
   const started = Date.now();
   let passed = false;
   try {
     const completion = await requestProviderJson({
-      baseUrl: normalizeBaseUrl(row.base_url ?? 'https://api.openai.com/v1'),
+      baseUrl: normalizeBaseUrl(row.base_url ?? defaultBaseUrl(row.type)),
       apiKey: decryptSecret(row.secret_ciphertext),
       model: row.model,
       providerId: row.id,
@@ -254,9 +271,8 @@ export async function completeStructuredJson(
   if (!row || !row.enabled || row.last_test_status !== 'passed' || !row.secret_ciphertext) {
     throw new ApiError(409, 'AI_PROVIDER_NOT_READY', 'AI provider must be enabled and pass its connection test');
   }
-  if (row.type !== 'openai_compatible') throw apiErrors.invalidInput('This provider adapter is not available yet');
   return requestProviderJson({
-    baseUrl: normalizeBaseUrl(row.base_url ?? 'https://api.openai.com/v1'),
+    baseUrl: normalizeBaseUrl(row.base_url ?? defaultBaseUrl(row.type)),
     apiKey: decryptSecret(row.secret_ciphertext),
     model: row.model,
     providerId: row.id,
@@ -277,29 +293,44 @@ async function requestProviderJson(input: {
   fetchImpl: typeof fetch;
 }): Promise<ProviderCompletion> {
   const baseUrl = input.baseUrl.endsWith('/') ? input.baseUrl : `${input.baseUrl}/`;
-  const url = new URL('chat/completions', baseUrl);
+  const anthropic = input.providerType === 'anthropic';
+  const url = new URL(anthropic ? 'messages' : 'chat/completions', baseUrl);
   const started = Date.now();
   let response: Response;
   try {
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    });
+    if (anthropic) {
+      headers.set('x-api-key', input.apiKey);
+      headers.set('anthropic-version', '2023-06-01');
+    } else {
+      headers.set('Authorization', `Bearer ${input.apiKey}`);
+    }
     response = await input.fetchImpl(url, {
       method: 'POST',
       redirect: 'error',
       signal: AbortSignal.timeout(20_000),
-      headers: {
-        Authorization: `Bearer ${input.apiKey}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        model: input.model,
-        temperature: 0,
-        max_tokens: 1400,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: input.system },
-          { role: 'user', content: input.user },
-        ],
-      }),
+      headers,
+      body: JSON.stringify(anthropic
+        ? {
+            model: input.model,
+            temperature: 0,
+            max_tokens: 1400,
+            system: input.system,
+            messages: [{ role: 'user', content: input.user }],
+          }
+        : {
+            model: input.model,
+            temperature: 0,
+            max_tokens: 1400,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: input.system },
+              { role: 'user', content: input.user },
+            ],
+          }),
     });
   } catch {
     throw apiErrors.providerUnavailable('AI provider request failed or timed out');
@@ -313,9 +344,28 @@ async function requestProviderJson(input: {
   } catch {
     throw apiErrors.providerUnavailable('AI provider returned invalid JSON');
   }
-  const parsed = ProviderResponseSchema.safeParse(payload);
-  if (!parsed.success) throw apiErrors.providerUnavailable('AI provider returned an unsupported response');
-  const content = parsed.data.choices[0]?.message.content;
+  let content: string | undefined;
+  let responseModel: string | undefined;
+  let inputTokens: number | null;
+  let outputTokens: number | null;
+  if (anthropic) {
+    const parsed = AnthropicResponseSchema.safeParse(payload);
+    if (!parsed.success) throw apiErrors.providerUnavailable('AI provider returned an unsupported response');
+    content = parsed.data.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text ?? '')
+      .join('');
+    responseModel = parsed.data.model;
+    inputTokens = parsed.data.usage?.input_tokens ?? null;
+    outputTokens = parsed.data.usage?.output_tokens ?? null;
+  } else {
+    const parsed = ProviderResponseSchema.safeParse(payload);
+    if (!parsed.success) throw apiErrors.providerUnavailable('AI provider returned an unsupported response');
+    content = parsed.data.choices[0]?.message.content;
+    responseModel = parsed.data.model;
+    inputTokens = parsed.data.usage?.prompt_tokens ?? null;
+    outputTokens = parsed.data.usage?.completion_tokens ?? null;
+  }
   if (!content) throw apiErrors.providerUnavailable('AI provider returned an unsupported response');
   let resultJson: unknown;
   try {
@@ -327,9 +377,9 @@ async function requestProviderJson(input: {
     providerId: input.providerId,
     providerType: input.providerType,
     content: JSON.stringify(resultJson),
-    model: parsed.data.model ?? input.model,
-    inputTokens: parsed.data.usage?.prompt_tokens ?? null,
-    outputTokens: parsed.data.usage?.completion_tokens ?? null,
+    model: responseModel ?? input.model,
+    inputTokens,
+    outputTokens,
     latencyMs: Date.now() - started,
   };
 }

@@ -172,6 +172,12 @@ Verification (local, 2026-11-10):
   intent against the post-restore CLI guard and verifies both valid serialized
   outcomes: intent commits before the guard, or the guard blocks intent and
   releases the pre-intent reservation. Live worker timing remains untested.
+- Phase 5 follow-up (2026-11-10): added the native Anthropic Messages adapter
+  for provider testing and structured JSON completions, including its API-key
+  and version headers, response/token parsing, exact HTTPS endpoint allowlist,
+  dashboard selection, and no-fallback behavior. Integration tests use a fake
+  provider; no live Anthropic credentials were used. `npm test` passes (24
+  files / 141 tests), as do lint, typecheck, and build.
 
 Requirement traceability (Phase 4 implemented slices):
 
@@ -208,8 +214,8 @@ signed off by the owner.
 ## Not started yet
 
 - Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, automated portal evidence validation, cross-listing target identity, pilot backup/portal restore verification, and owner live UAT. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
-- Phase 5/6: additional adapters, schedules UI, notifications, Gmail/Notion.
-- Additional provider adapters (Gemini and native Anthropic), live provider credentials, production deployment, and external ATS/client compatibility checks.
+- Phase 5/6: additional portal adapters, saved-search/schedule UI and worker wiring, notifications, Gmail/Notion.
+- Additional provider adapters (Gemini), live provider credentials, production deployment, and external ATS/client compatibility checks. Native Anthropic Messages API support is implemented; it still needs owner credentials and live connection UAT.
 - Owner confirmation of the proposed ranking rubric, live end-to-end/UAT sign-off, and restore drill against the actual pilot backup and portal history.
 
 ## Known gaps / follow-ups

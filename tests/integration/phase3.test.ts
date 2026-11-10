@@ -23,6 +23,18 @@ function providerResponse(content: unknown, status = 200): Response {
   }), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
+function anthropicProviderResponse(content: unknown, status = 200): Response {
+  return new Response(JSON.stringify({
+    id: 'msg_fixture',
+    type: 'message',
+    role: 'assistant',
+    model: 'claude-fixture-model',
+    content: [{ type: 'text', text: JSON.stringify(content) }],
+    stop_reason: 'end_turn',
+    usage: { input_tokens: 11, output_tokens: 7 },
+  }), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
 describe('Phase 3 workflow', () => {
   beforeEach(async () => {
     await resetDatabase();
@@ -115,6 +127,58 @@ describe('Phase 3 workflow', () => {
     await expect(completeStructuredJson(owner.ownerId, { system: 'test', user: '{}' }, fetchSpy))
       .rejects.toMatchObject({ code: 'AI_PROVIDER_NOT_READY' });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('uses the native Anthropic Messages contract for tests and structured completions', async () => {
+    const owner = await createTestOwner();
+    await saveAiProvider(owner.ownerId, {
+      type: 'anthropic',
+      baseUrl: 'https://api.anthropic.com/v1',
+      model: 'claude-fixture-model',
+      apiKey: 'fake-anthropic-secret-12345',
+      enabled: true,
+    });
+
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const fakeFetch: typeof fetch = async (input, init) => {
+      const headers = new Headers(init?.headers);
+      expect(String(input)).toBe('https://api.anthropic.com/v1/messages');
+      expect(headers.get('x-api-key')).toBe('fake-anthropic-secret-12345');
+      expect(headers.get('anthropic-version')).toBe('2023-06-01');
+      expect(headers.has('authorization')).toBe(false);
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requests.push({ url: String(input), body });
+      return anthropicProviderResponse(
+        requests.length === 1 ? { ok: true } : { result: 'grounded' },
+      );
+    };
+
+    const tested = await runProviderTest(owner.ownerId, 'anthropic-provider-test', fakeFetch);
+    expect(tested).toMatchObject({ passed: true, model: 'claude-fixture-model' });
+    const completion = await completeStructuredJson(
+      owner.ownerId,
+      { system: 'Return only JSON.', user: '{"request":"fixture"}' },
+      fakeFetch,
+    );
+
+    expect(completion).toMatchObject({
+      providerType: 'anthropic',
+      content: '{"result":"grounded"}',
+      model: 'claude-fixture-model',
+      inputTokens: 11,
+      outputTokens: 7,
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[0]!.body).toMatchObject({
+      model: 'claude-fixture-model',
+      max_tokens: 1400,
+      system: 'You are a connectivity check. Follow only this instruction.',
+      messages: [{ role: 'user', content: 'Return exactly this JSON object: {"ok":true}.' }],
+    });
+    expect(requests[1]!.body).toMatchObject({
+      system: 'Return only JSON.',
+      messages: [{ role: 'user', content: '{"request":"fixture"}' }],
+    });
   });
 
   it('creates, edits, reviews, downloads, and records immutable PDF document versions', async () => {

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 
 export interface PublicAiProvider {
   id: string;
-  type: 'openai_compatible';
+  type: 'openai_compatible' | 'anthropic';
   baseUrl: string;
   model: string;
   enabled: boolean;
@@ -37,6 +37,7 @@ async function callApi<T>(url: string, options: RequestInit & { csrf?: string })
 
 export default function AiProviderSettings({ csrfToken, provider }: Props) {
   const router = useRouter();
+  const [type, setType] = useState<PublicAiProvider['type']>(provider?.type ?? 'openai_compatible');
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? 'https://api.openai.com/v1');
   const [model, setModel] = useState(provider?.model ?? 'gpt-4o-mini');
   const [apiKey, setApiKey] = useState('');
@@ -51,7 +52,7 @@ export default function AiProviderSettings({ csrfToken, provider }: Props) {
       csrf: csrfToken,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'openai_compatible',
+        type,
         baseUrl,
         model,
         ...(apiKey ? { apiKey } : {}),
@@ -114,7 +115,24 @@ export default function AiProviderSettings({ csrfToken, provider }: Props) {
       </div>
       <div className="grid">
         <div>
-          <label htmlFor="ai-base-url">Base URL</label>
+          <label htmlFor="ai-provider-type">Adapter</label>
+          <select
+            id="ai-provider-type"
+            value={type}
+            onChange={(event) => {
+              const nextType = event.target.value as PublicAiProvider['type'];
+              setType(nextType);
+              setBaseUrl(nextType === 'anthropic'
+                ? 'https://api.anthropic.com/v1'
+                : 'https://api.openai.com/v1');
+            }}
+          >
+            <option value="openai_compatible">OpenAI compatible</option>
+            <option value="anthropic">Anthropic native</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor="ai-base-url">Base URL (HTTPS, allowlisted)</label>
           <input id="ai-base-url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} maxLength={500} />
         </div>
         <div>

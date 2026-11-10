@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const ProviderSchema = z.object({
-  type: z.literal('openai_compatible'),
+  type: z.enum(['openai_compatible', 'anthropic']),
   baseUrl: z.string().trim().url().max(500),
   model: z.string().trim().min(1).max(200),
   apiKey: z.string().trim().min(8).max(2048).optional(),
