@@ -76,6 +76,10 @@ approvals, and dry-runs) — see
 - Active recovery holds are visible to the owner with their scope and checkpoint
   window. Release controls remain unavailable until the underlying evidence can
   be verified.
+- Post-restore operator CLI previews the proposed checkpoint window, then can
+  disable browser submission and create/widen a global recovery hold under the
+  same control-row lock used by dispatch intent. It must be run only after the
+  old worker/browser session is isolated; it does not perform that isolation.
 - Minimal accessible dashboard + login page, profile/fact editor, job import and
   filtering/ranking UI, evaluation details, application tracker UI, and health
   endpoints.

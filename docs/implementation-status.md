@@ -144,6 +144,11 @@ Verification (local, 2026-11-10):
   `npm run build` pass after adding pre-intent cleanup for invalid approvals,
   disabled adapters, and active recovery holds.
   Tests were not run after this change; UAT-50 regression coverage remains open.
+- Phase 4 follow-up (2026-11-10): added a read-only-by-default post-restore
+  guard CLI. With `--apply`, it disables browser submission, creates or
+  conservatively widens a global recovery hold under the dispatch control lock,
+  and records an operator audit event. The CLI cannot isolate the prior worker
+  or browser session; an isolated backup-restore drill and UAT-47 remain open.
 
 Requirement traceability (Phase 4 implemented slices):
 
