@@ -111,6 +111,38 @@ Requirement traceability (Phase 3 slices):
 | AC-13 / UAT-24, UAT-53–54 | Provider settings are write-only for the key, connection test records selected model/status, AI review requires explicit transfer consent, and audit data excludes prompt/answer/key content; stubbed provider tests cover error/no-fallback paths. |
 | AC-16 / UAT-39–41 | Export includes AI review metadata, decrypted application answer/document drafts and their versions, private PDFs, and excludes provider keys; reset deletes related DB rows/artifacts and revokes exports. Restore/backup retention remains an operational UAT. |
 
+## Phase 4 — Portal Assist P1 (fixture slice only)
+
+| Epic | Status | What exists |
+|---|---|---|
+| E10 Browser | Partial, local fixture only | `local-dummy-v1` defines a synthetic form fingerprint. Preflight snapshots bind the application version, listing revision, latest documents, encrypted-answer hashes, and current verification state. No browser profile, cookies, login, OTP/CAPTCHA handling, or network adapter exists. |
+| E11 Submit | Partial, local fixture only | One active owner approval is version-bound, can be revoked, and becomes stale when snapshot/document/fact/posting inputs change. Dry-run records a `simulated` attempt and creates no task or quota reservation. No live dispatch, approval consumption, evidence ingestion, reconciliation, or quota reservation exists. |
+
+Verification (local, 2026-11-10):
+
+- Unit coverage checks deterministic fixture fingerprint, readiness blockers,
+  and fixture-only target identity.
+- PostgreSQL integration coverage checks preflight/approval/dry-run, owner
+  isolation, changed posting/facts, one active approval under a race, and zero
+  task/quota side effects; unresolved attempts block preflight. Privacy export
+  includes snapshots and approvals.
+- `npm run typecheck` — pass.
+- `npm run lint` — pass.
+- Targeted fixture + submission + privacy tests — 3 files / 14 tests pass.
+- `npm test` — 21 files / 117 tests pass.
+- `npm run build` — pass with the production Webpack build.
+- These are local fixture checks, not live portal UAT. DEC-16 (portal capability)
+  and DEC-13 (per-adapter evidence rules) remain pending.
+
+Requirement traceability (Phase 4 fixture slice):
+
+| Requirement/UAT | Coverage |
+|---|---|
+| AC-10 / UAT-16 | Local dry-run stores `simulated`; fixture code has no browser/network dispatch, and integration test confirms zero task and quota rows. |
+| AC-10 / UAT-18 | Approval binds the snapshot hash and current document/fact/posting state; mutations cause stale review and prevent dry-run. |
+| PR-15 / UAT-54 (partial) | Preflight and dry-run create owner audit events with IDs/counts and no answer/CV payloads. |
+| UAT-19–22, UAT-28–30, UAT-42–50 | Not implemented: live dispatch lifecycle, race-stop, proof/reconciliation, quota, cross-listing target identity, and restore-loss recovery. |
+
 ## Requirement traceability (foundation)
 
 These scenarios now have executable coverage; this is **not** a claim that UAT is
@@ -130,7 +162,7 @@ signed off by the owner.
 
 ## Not started yet
 
-- Phase 4: portal login/session, preflight snapshots, approvals, quota reservations, dispatch intent, evidence/reconciliation, recovery holds API.
+- Phase 4 remaining: real portal login/session, adapter approval gate, quota settings/reservations, dispatch intent, evidence/reconciliation, recovery-hold API, cancellation-vs-intent handling, cross-listing target identity, restore-loss recovery, and owner live UAT. The local fixture slice is not live portal support.
 - Phase 5/6: additional adapters, schedules UI, notifications, Gmail/Notion.
 - Additional provider adapters (Gemini and native Anthropic), live provider credentials, production deployment, and external ATS/client compatibility checks.
 - Owner confirmation of the proposed ranking rubric, live end-to-end/UAT sign-off, and isolated backup restore drill.
@@ -153,6 +185,9 @@ signed off by the owner.
   when extraction templates are defined.
 - Manual submission uses `target_key = job:<id>`; cross-listing verification and
   reconciliation of `submit_unknown` remain Phase 4 work.
+- Local Portal Assist uses `fixture:job:<id>` only for synthetic review records;
+  never use it as a verified requisition key in a live adapter. Material freshness
+  is rechecked when reading, approving, or running a fixture dry-run.
 - The P0 CV/cover layout is a plain-text local template, not a branded design.
   PDF checks validate structure, text layer and page limits; visual rendering
   and ATS compatibility still require owner review on the target deployment.

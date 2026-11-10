@@ -15,6 +15,8 @@ const EnvSchema = z.object({
   LOGIN_WINDOW_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
   STORAGE_MAX_BYTES: z.coerce.number().int().min(1).default(10 * 1024 * 1024),
   IDEMPOTENCY_TTL_HOURS: z.coerce.number().int().min(1).max(720).default(168),
+  // Provisional owner-review window; DEC-05 remains pending.
+  SUBMISSION_SNAPSHOT_TTL_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),
   // Exact origins allowed for owner-configured OpenAI-compatible providers.
   // This prevents a saved provider URL from becoming an arbitrary SSRF target.
   AI_ALLOWED_ENDPOINT_ORIGINS: z.string().default('https://api.openai.com/v1'),

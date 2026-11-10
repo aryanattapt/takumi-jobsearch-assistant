@@ -5,9 +5,10 @@ in [`requirement/`](./requirement) and is treated as **read-only source of truth
 implementation decisions and their status are tracked in
 [`docs/decisions.md`](./docs/decisions.md).
 
-Current implementation: **Phase 0–3 P0** (private foundation, profile/manual job
-search, evidence-linked ranking, consented AI review, versioned CV/cover PDFs,
-application-specific screening answers, and manual application tracking) — see
+Current implementation: **Phase 0–3 P0 plus the Phase 4 local-fixture slice**
+(private foundation, profile/manual job search, evidence-linked ranking,
+consented AI review, versioned CV/cover PDFs, application-specific screening
+answers, manual tracking, local preflight snapshots, approvals, and dry-runs) — see
 [`docs/implementation-status.md`](./docs/implementation-status.md).
 
 ## What works today
@@ -59,14 +60,21 @@ application-specific screening answers, and manual application tracking) — see
   at rest and linked to source fact versions. Sensitive or unknown questions
   require owner input; suggestions are copied/reviewed manually and never
   auto-filled into a portal.
+- Local Portal Assist fixture creates version-bound preflight snapshots, checks
+  reviewed documents and verified source facts, binds candidate facts by hash,
+  supports owner approval/revocation, and records dry-runs as `simulated`. It
+  never opens a browser, reads cookies, contacts a portal, sends candidate
+  data, or consumes quota.
 - Minimal accessible dashboard + login page, profile/fact editor, job import and
   filtering/ranking UI, evaluation details, application tracker UI, and health
   endpoints.
 
-Not built yet: portal automation, approvals, quota enforcement, schedules UI,
-notifications, and native Gemini/Anthropic adapters. The local CV/cover template
-is intentionally plain text; visual/ATS acceptance and live end-to-end UAT still
-need owner sign-off. See the phase table in
+Not built yet: real portal accounts/sessions, live dispatch, quota reservation,
+evidence capture/reconciliation, recovery-hold controls, schedules UI,
+notifications, and native Gemini/Anthropic adapters. DEC-16 and per-adapter
+evidence rules remain pending, so the fixture is not a substitute for selecting
+an allowed portal. The local CV/cover template is intentionally plain text;
+visual/ATS acceptance and live end-to-end UAT still need owner sign-off. See the phase table in
 `docs/implementation-status.md`.
 
 ## Stack
@@ -137,6 +145,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | `BACKUP_RETENTION_DAYS` | no | Default 30 (proposal DEC-08) |
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_WINDOW_MINUTES` | no | Default 5 / 15 |
 | `STORAGE_MAX_BYTES` | no | Default 10 MiB per upload |
+| `SUBMISSION_SNAPSHOT_TTL_MINUTES` | no | Default 30; provisional local preflight/approval window pending DEC-05 |
 | `AI_ALLOWED_ENDPOINT_ORIGINS` | no | Comma-separated exact HTTPS base URLs permitted for the OpenAI-compatible adapter; defaults to `https://api.openai.com/v1` |
 
 ## API surface (implemented)
@@ -156,6 +165,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | Tracker | `POST /api/v1/applications/{id}/manual-submissions`, `PATCH /api/v1/applications/{id}/recruitment-stage`, `GET /api/v1/applications/{id}/events` |
 | Answer bank | `GET/POST /api/v1/answer-bank`, `PATCH /api/v1/answer-bank/{id}`, `POST /api/v1/answer-bank/suggest` |
 | Application drafts | `GET/POST /api/v1/applications/{id}/answers`, `GET/POST /api/v1/applications/{id}/documents`, `PATCH /api/v1/applications/{id}/documents/{versionId}`, `POST /api/v1/applications/{id}/documents/{versionId}/review` |
+| Local Portal Assist fixture | `POST /api/v1/applications/{id}/preflights`, `GET /api/v1/applications/{id}/review`, `POST /api/v1/applications/{id}/approvals`, `POST /api/v1/approvals/{id}/revoke`, `POST /api/v1/applications/{id}/dry-runs` |
 | Tasks | `GET /api/v1/tasks/{id}`, `POST /api/v1/tasks/{id}/cancel` |
 
 All authenticated mutations require `x-csrf-token` (from login/session response)

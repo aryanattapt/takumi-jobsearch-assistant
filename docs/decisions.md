@@ -15,7 +15,7 @@ Status legend: **assumed** = used because the plan needs a concrete default;
 | DEC-02 | assumed (provisional) | Next.js 16 + React 19 + TypeScript, Node worker, PostgreSQL, Docker Compose | Webpack bundler is pinned in scripts because Turbopack cannot create junctions on exFAT |
 | DEC-03 | assumed (provisional) | Implementation lives in this repository, alongside `requirement/` | Repository visibility/license still unconfirmed |
 | DEC-04 | assumed for P0 | No live portal adapter yet; manual import path is implemented (Phase 2) | Live adapters keep `enabled = false`; `manual` source is the only enabled source |
-| DEC-05 | pending | Not implemented yet | Approval expiry constant will live in config |
+| DEC-05 | pending (provisional implementation) | Local snapshot/approval window defaults to 30 minutes and is configurable | `SUBMISSION_SNAPSHOT_TTL_MINUTES`; final policy and live portal approval rules remain unconfirmed |
 | DEC-06 | provisional implementation | Local rule-based evaluator uses the proposal weights 30/25/15/30 under `local-rule-v1-proposal`; unknown dimensions keep the total score null | Owner confirmation and UAT-11 are still pending; this is not a confirmed product decision |
 | DEC-07 | assumed | P0 manual submission, browser automation disabled, schedules disabled | `submission_controls.browser_enabled = false` by default |
 | DEC-08 | assumed | Export TTL 24 h, backup retention 30 days, export read requires matching privacy generation | All values configurable via env |
@@ -29,6 +29,12 @@ Status legend: **assumed** = used because the plan needs a concrete default;
 | DEC-16 | pending | First adapter capability not selected | Blocks Phase 4 |
 
 ## Invariants taken from the requirement package
+
+Phase 4 fixture slice (2026-11-10): `local-dummy-v1` is an internal synthetic
+form only. It proves snapshot binding, owner approval, and dry-run persistence;
+it does **not** select an external portal, validate portal permissions, or
+enable browser sessions/dispatch. `fixture:job:<id>` is not a verified live
+target identity. DEC-16 and DEC-13 remain pending.
 
 - `submitted_confirmed` requires evidence (BR-12); unknown outcomes never retry
   automatically (BR-13). The queue refuses to auto-retry non-safe task kinds

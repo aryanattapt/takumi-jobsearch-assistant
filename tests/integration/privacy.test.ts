@@ -4,9 +4,10 @@ import { uploadDocument } from '@/lib/documents/service';
 import { createApplication } from '@/lib/applications/service';
 import { saveApplicationAnswer } from '@/lib/applications/answers';
 import { createFact } from '@/lib/profile/service';
-import { createApplicationDocumentDraft } from '@/lib/documents/application-drafts';
+import { createApplicationDocumentDraft, markApplicationDocumentReviewed } from '@/lib/documents/application-drafts';
 import { saveAiProvider } from '@/lib/ai/providers';
 import { importManualJob } from '@/lib/jobs/service';
+import { approveLocalPreflight, createLocalPreflight } from '@/lib/submissions/service';
 import { runExport } from '@/lib/privacy/export';
 import { runWorkspaceReset } from '@/lib/privacy/purge';
 import {
@@ -33,6 +34,20 @@ describe('privacy export and workspace reset', () => {
       kind: 'cv',
     });
     const phase3 = await createPhase3Data(owner.ownerId);
+    await markApplicationDocumentReviewed(owner.ownerId, phase3.applicationId, phase3.documentVersionId);
+    const currentVersion = await getPool().query<{ current_version: number }>(
+      'SELECT current_version FROM applications WHERE id = $1',
+      [phase3.applicationId],
+    );
+    const preflight = await createLocalPreflight(owner.ownerId, phase3.applicationId, {
+      listingId: phase3.listingId,
+      expectedVersion: currentVersion.rows[0]!.current_version,
+    });
+    await approveLocalPreflight(owner.ownerId, phase3.applicationId, {
+      snapshotId: preflight.snapshot.id,
+      snapshotHash: preflight.snapshot.snapshot_hash,
+      expectedVersion: preflight.applicationVersion,
+    });
 
     const created = await createExportRequest(owner.ownerId);
     await runExport(owner.ownerId, { privacyRequestId: created.privacyRequestId });
@@ -55,6 +70,9 @@ describe('privacy export and workspace reset', () => {
     expect(text).toContain('I build reliable TypeScript APIs.');
     expect(text).toContain('documentDraftVersions');
     expect(text).toContain('answerVersions');
+    expect(text).toContain('reviewSnapshots');
+    expect(text).toContain('approvals');
+    expect(text).toContain('local-dummy-v1');
     expect(text).toContain(phase3.applicationId);
     expect(text).not.toContain('privacy-provider-key-not-real');
   });
@@ -174,7 +192,12 @@ describe('privacy export and workspace reset', () => {
   });
 });
 
-async function createPhase3Data(ownerId: string): Promise<{ applicationId: string; documentId: string }> {
+async function createPhase3Data(ownerId: string): Promise<{
+  applicationId: string;
+  documentId: string;
+  documentVersionId: string;
+  listingId: string;
+}> {
   const imported = await importManualJob(ownerId, {
     title: 'Backend Engineer',
     company: 'Privacy Export Fixture',
@@ -209,5 +232,10 @@ async function createPhase3Data(ownerId: string): Promise<{ applicationId: strin
     apiKey: 'privacy-provider-key-not-real',
     enabled: true,
   });
-  return { applicationId: application.id, documentId: draft.document_id };
+  return {
+    applicationId: application.id,
+    documentId: draft.document_id,
+    documentVersionId: draft.id,
+    listingId: imported.listingId,
+  };
 }

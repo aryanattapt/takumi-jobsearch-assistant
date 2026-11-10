@@ -155,6 +155,23 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
         ORDER BY e.occurred_at`,
       [ownerId],
     );
+    const applicationReviewSnapshots = await query(
+      `SELECT id, application_id, listing_id, posting_revision_id, target_key,
+              form_fingerprint, content, snapshot_hash, application_version,
+              adapter_id, captured_at, valid_until, invalidated_at
+         FROM application_review_snapshots
+        WHERE owner_id = $1
+        ORDER BY captured_at`,
+      [ownerId],
+    );
+    const applicationApprovals = await query(
+      `SELECT id, application_id, snapshot_id, approved_at, expires_at,
+              revoked_at, consumed_at, created_at
+         FROM approvals
+        WHERE owner_id = $1
+        ORDER BY created_at`,
+      [ownerId],
+    );
     const applicationAnswerRows = await query<{
       id: string;
       application_id: string;
@@ -341,6 +358,8 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
       applications,
       attempts: applicationAttempts,
       events: applicationEvents,
+      reviewSnapshots: applicationReviewSnapshots,
+      approvals: applicationApprovals,
       answers: exportedApplicationAnswers,
       answerVersions: exportedApplicationAnswerVersions,
       documentDraftVersions: exportedApplicationDocuments,

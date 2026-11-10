@@ -2,6 +2,7 @@
 
 import { useCallback, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import SubmissionPreflight from '@/components/submission-preflight';
 
 export interface TrackerApplication {
   id: string;
@@ -738,6 +739,13 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
                     </ul>
                   ) : null}
                 </details>
+                <SubmissionPreflight
+                  csrfToken={props.csrfToken}
+                  applicationId={application.id}
+                  applicationVersion={application.version}
+                  listingId={application.job.listingId}
+                  onChanged={fetchApplications}
+                />
                 {openEvents[application.id] ? (
                   <ul className="card-list" style={{ marginTop: 8 }}>
                     {(events[application.id] ?? []).map((event) => (

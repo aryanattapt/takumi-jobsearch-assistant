@@ -22,6 +22,13 @@ import type {
 } from '@/lib/jobs/service';
 import type { MatchEvaluationRow } from '@/lib/evaluations/service';
 import type { AiJobReview } from '@/lib/ai/job-review';
+import type {
+  ApplicationReview,
+  ApprovalResult,
+  DryRunResult,
+  ReviewSnapshotResult,
+  RevokeApprovalResult,
+} from '@/lib/submissions/service';
 import type { FactRow, ProfileWithTimezone } from '@/lib/profile/service';
 import { apiErrors } from '@/lib/http/errors';
 
@@ -351,6 +358,83 @@ export function applicationAttemptDto(row: ApplicationAttemptRow) {
     errorCode: row.error_code,
     finishedAt: row.finished_at?.toISOString() ?? null,
     createdAt: row.created_at.toISOString(),
+  };
+}
+
+function reviewSnapshotBaseDto(row: NonNullable<ApplicationReview['snapshot']>) {
+  return {
+    id: row.id,
+    applicationId: row.application_id,
+    listingId: row.listing_id,
+    postingRevisionId: row.posting_revision_id,
+    targetKey: row.target_key,
+    formFingerprint: row.form_fingerprint,
+    content: row.content,
+    snapshotHash: row.snapshot_hash,
+    applicationVersion: row.application_version,
+    adapterId: row.adapter_id,
+    capturedAt: row.captured_at.toISOString(),
+    validUntil: row.valid_until.toISOString(),
+    invalidatedAt: row.invalidated_at?.toISOString() ?? null,
+  };
+}
+
+export function preflightResultDto(result: ReviewSnapshotResult) {
+  return {
+    snapshot: reviewSnapshotBaseDto(result.snapshot),
+    applicationVersion: result.applicationVersion,
+  };
+}
+
+export function applicationReviewDto(review: ApplicationReview) {
+  return {
+    snapshot: review.snapshot ? reviewSnapshotBaseDto(review.snapshot) : null,
+    current: review.current,
+    approval: review.approval ? {
+      id: review.approval.id,
+      snapshotId: review.approval.snapshot_id,
+      status: review.approval.status,
+      approvedAt: review.approval.approved_at.toISOString(),
+      expiresAt: review.approval.expires_at.toISOString(),
+      revokedAt: review.approval.revoked_at?.toISOString() ?? null,
+    } : null,
+  };
+}
+
+export function approvalResultDto(result: ApprovalResult) {
+  return {
+    approval: {
+      id: result.approval.id,
+      snapshotId: result.approval.snapshot_id,
+      status: 'active' as const,
+      approvedAt: result.approval.approved_at.toISOString(),
+      expiresAt: result.approval.expires_at.toISOString(),
+      revokedAt: result.approval.revoked_at?.toISOString() ?? null,
+    },
+    applicationVersion: result.applicationVersion,
+  };
+}
+
+export function revokedApprovalDto(result: RevokeApprovalResult) {
+  return {
+    approval: {
+      id: result.approval.id,
+      snapshotId: result.approval.snapshot_id,
+      status: 'revoked' as const,
+      approvedAt: result.approval.approved_at.toISOString(),
+      expiresAt: result.approval.expires_at.toISOString(),
+      revokedAt: result.approval.revoked_at?.toISOString() ?? null,
+    },
+    applicationVersion: result.applicationVersion,
+  };
+}
+
+export function localDryRunDto(result: DryRunResult) {
+  return {
+    attemptId: result.attemptId,
+    state: result.state,
+    snapshotId: result.snapshotId,
+    createdAt: result.createdAt.toISOString(),
   };
 }
 
