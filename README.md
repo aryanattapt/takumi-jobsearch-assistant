@@ -69,12 +69,15 @@ answers, manual tracking, local preflight snapshots, approvals, and dry-runs) â€
   The dashboard and API keep browser submission disabled until the first portal
   adapter and its evidence rules are qualified; these settings do not reserve
   quota or submit applications.
+- Active recovery holds are visible to the owner with their scope and checkpoint
+  window. Release controls remain unavailable until the underlying evidence can
+  be verified.
 - Minimal accessible dashboard + login page, profile/fact editor, job import and
   filtering/ranking UI, evaluation details, application tracker UI, and health
   endpoints.
 
 Not built yet: real portal accounts/sessions, live dispatch, quota reservation,
-evidence capture/reconciliation, recovery-hold controls, schedules UI,
+evidence capture/reconciliation, recovery-hold resolution, schedules UI,
 notifications, and native Gemini/Anthropic adapters. DEC-16 and per-adapter
 evidence rules remain pending, so the fixture is not a substitute for selecting
 an allowed portal. The local CV/cover template is intentionally plain text;
@@ -171,6 +174,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | Application drafts | `GET/POST /api/v1/applications/{id}/answers`, `GET/POST /api/v1/applications/{id}/documents`, `PATCH /api/v1/applications/{id}/documents/{versionId}`, `POST /api/v1/applications/{id}/documents/{versionId}/review` |
 | Local Portal Assist fixture | `POST /api/v1/applications/{id}/preflights`, `GET /api/v1/applications/{id}/review`, `POST /api/v1/applications/{id}/approvals`, `POST /api/v1/approvals/{id}/revoke`, `POST /api/v1/applications/{id}/dry-runs` |
 | Submission settings | `GET/PATCH /api/v1/submission-settings` (quota policy only; browser enablement remains blocked) |
+| Recovery holds | `GET /api/v1/submission-recovery/holds` (owner-scoped active hold visibility; resolution is not available) |
 | Tasks | `GET /api/v1/tasks/{id}`, `POST /api/v1/tasks/{id}/cancel` |
 
 All authenticated mutations require `x-csrf-token` (from login/session response)

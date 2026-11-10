@@ -116,7 +116,7 @@ Requirement traceability (Phase 3 slices):
 | Epic | Status | What exists |
 |---|---|---|
 | E10 Browser | Partial, local fixture only | `local-dummy-v1` defines a synthetic form fingerprint. Preflight snapshots bind the application version, listing revision, latest documents, encrypted-answer hashes, and current verification state. No browser profile, cookies, login, OTP/CAPTCHA handling, or network adapter exists. |
-| E11 Submit | Partial, local fixture + policy configuration | One active owner approval is version-bound, can be revoked, and becomes stale when snapshot/document/fact/posting inputs change. Dry-run records a `simulated` attempt and creates no task or quota reservation. Owners can save timezone/global/per-source quota policy, while browser enablement remains fail-closed. No live dispatch, approval consumption, evidence ingestion, reconciliation, or quota reservation exists. |
+| E11 Submit | Partial, local fixture + policy configuration | One active owner approval is version-bound, can be revoked, and becomes stale when snapshot/document/fact/posting inputs change. Dry-run records a `simulated` attempt and creates no task or quota reservation. Owners can save timezone/global/per-source quota policy, while browser enablement remains fail-closed. Active recovery holds can be inspected through an owner-scoped read API. No live dispatch, approval consumption, evidence ingestion, reconciliation, or quota reservation exists. |
 
 Verification (local, 2026-11-10):
 
@@ -130,7 +130,8 @@ Verification (local, 2026-11-10):
 - `npm run lint` — pass.
 - Targeted fixture + submission + privacy tests — 3 files / 14 tests pass;
   submission-settings tests — 1 file / 5 tests pass.
-- `npm test` — 22 files / 122 tests pass.
+- Recovery-hold visibility tests — 1 file / 2 tests pass.
+- `npm test` — 23 files / 124 tests pass.
 - `npm run build` — pass with the production Webpack build.
 - Submission policy tests verify owner scope, optimistic versioning, audit, IANA
   timezone/limit validation, and rejection of browser activation before adapter qualification.
@@ -144,6 +145,7 @@ Requirement traceability (Phase 4 implemented slices):
 | AC-10 / UAT-16 | Local dry-run stores `simulated`; fixture code has no browser/network dispatch, and integration test confirms zero task and quota rows. |
 | AC-10 / UAT-18 | Approval binds the snapshot hash and current document/fact/posting state; mutations cause stale review and prevent dry-run. |
 | BR-15 (partial) | Owner can save a quota timezone and global/per-source limits with optimistic versioning and audit. No reservation or intent-time accounting occurs; browser enablement is rejected until adapter qualification. |
+| UAT-41 (partial) | Active recovery holds can be listed with scope/checkpoint metadata for the owner; evidence-based resolution and restored-history verification are not implemented. |
 | PR-15 / UAT-54 (partial) | Preflight and dry-run create owner audit events with IDs/counts and no answer/CV payloads. |
 | UAT-19–22, UAT-28–30, UAT-42–50 | Not implemented: live dispatch lifecycle, race-stop, proof/reconciliation, quota, cross-listing target identity, and restore-loss recovery. |
 
@@ -166,7 +168,7 @@ signed off by the owner.
 
 ## Not started yet
 
-- Phase 4 remaining: real portal login/session, adapter qualification and approval gate, quota reservations and intent-time accounting, dispatch intent, evidence/reconciliation, recovery-hold API, cancellation-vs-intent handling, cross-listing target identity, restore-loss recovery, and owner live UAT. The local fixture and quota-policy settings are not live portal support.
+- Phase 4 remaining: real portal login/session, adapter qualification and approval gate, quota reservations and intent-time accounting, dispatch intent, evidence/reconciliation, evidence-based recovery-hold resolution, cancellation-vs-intent handling, cross-listing target identity, restore-loss recovery, and owner live UAT. The local fixture and quota-policy settings are not live portal support.
 - Phase 5/6: additional adapters, schedules UI, notifications, Gmail/Notion.
 - Additional provider adapters (Gemini and native Anthropic), live provider credentials, production deployment, and external ATS/client compatibility checks.
 - Owner confirmation of the proposed ranking rubric, live end-to-end/UAT sign-off, and isolated backup restore drill.

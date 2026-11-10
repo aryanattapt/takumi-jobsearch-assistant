@@ -19,7 +19,7 @@ import {
   profileDto,
 } from '@/lib/api/dto';
 import { getServerSession } from '@/lib/auth/server-session';
-import { query, queryOne } from '@/lib/db/pool';
+import { query } from '@/lib/db/pool';
 import {
   listDuplicateSuggestions,
   listJobs,
@@ -30,6 +30,7 @@ import { listAnswers } from '@/lib/answers/service';
 import { getAiProvider } from '@/lib/ai/providers';
 import { listLatestAiJobReviews } from '@/lib/ai/job-review';
 import { getSubmissionSettings } from '@/lib/submissions/settings';
+import { listActiveSubmissionRecoveryHolds } from '@/lib/submissions/recovery';
 
 export const dynamic = 'force-dynamic';
 
@@ -103,12 +104,7 @@ export default async function Page() {
         LIMIT 10`,
       [session.ownerId],
     ),
-    queryOne<{ count: number }>(
-      `SELECT count(*)::int AS count
-         FROM submission_recovery_holds
-        WHERE owner_id = $1 AND status = 'active'`,
-      [session.ownerId],
-    ),
+    listActiveSubmissionRecoveryHolds(session.ownerId),
     getProfile(session.ownerId),
     listFacts(session.ownerId),
     listJobs(session.ownerId, { status: 'active', limit: 50 }),
@@ -165,7 +161,15 @@ export default async function Page() {
       privacyRequests={privacyDto}
       tasks={tasksDto}
       browserEnabled={submissionSettings.browserEnabled}
-      activeHolds={holds?.count ?? 0}
+      activeHolds={holds.length}
+      recoveryHolds={holds.map((hold) => ({
+        id: hold.id,
+        scope: hold.scope,
+        scopeKey: hold.scope_key,
+        checkpointAt: hold.checkpoint_at.toISOString(),
+        windowEndAt: hold.window_end_at?.toISOString() ?? null,
+        version: hold.version,
+      }))}
     >
       <>
         <JobSearch
