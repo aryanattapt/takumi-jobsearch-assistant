@@ -111,7 +111,24 @@ export interface WorkspaceDocumentOption {
   id: string;
   originalName: string;
   kind: string;
+  mediaType: string;
   status: string;
+}
+
+interface ExtractedFactCandidate {
+  type: string;
+  value: unknown;
+  confidence: number;
+  evidence: string[];
+}
+
+interface CompanyResearchResult {
+  id: string;
+  summary: string;
+  status: string;
+  checkedAt: string | null;
+  claims: Array<{ category: string; statement: string; confidence: string; evidence: string; sourceRefs: string[] }>;
+  openQuestions: string[];
 }
 
 export interface WorkspaceAiReview {
@@ -240,6 +257,9 @@ export default function JobSearch(props: JobSearchProps) {
   const [factType, setFactType] = useState('skill');
   const [factValue, setFactValue] = useState('');
   const [factSource, setFactSource] = useState('');
+  const [extractionDocumentId, setExtractionDocumentId] = useState('');
+  const [extractedCandidates, setExtractedCandidates] = useState<ExtractedFactCandidate[]>([]);
+  const [selectedExtracted, setSelectedExtracted] = useState<number[]>([]);
 
   const [jobTitle, setJobTitle] = useState('');
   const [jobCompany, setJobCompany] = useState('');
@@ -260,6 +280,8 @@ export default function JobSearch(props: JobSearchProps) {
   const [aiReviews, setAiReviews] = useState<Record<string, WorkspaceAiReview>>(
     Object.fromEntries(props.savedAiReviews.map((review) => [review.jobId, review])),
   );
+  const [researchInput, setResearchInput] = useState<Record<string, string>>({});
+  const [companyResearch, setCompanyResearch] = useState<Record<string, CompanyResearchResult[]>>({});
 
   function evaluationIsCurrent(job: WorkspaceJob): boolean {
     const evaluation = job.latestEvaluation;
@@ -335,6 +357,46 @@ export default function JobSearch(props: JobSearchProps) {
         }),
       });
       setMessage('Profil tersimpan dengan versi baru.');
+    });
+  }
+
+  async function extractCvFacts(): Promise<void> {
+    if (!extractionDocumentId) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await callApi<{ candidates: ExtractedFactCandidate[] }>('/api/v1/profile/fact-extractions', {
+        method: 'POST', csrf: props.csrfToken, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId: extractionDocumentId }),
+      });
+      setExtractedCandidates(result.candidates);
+      setSelectedExtracted(result.candidates.map((_, index) => index));
+      setMessage('Periksa setiap saran. Fakta baru tetap belum diverifikasi.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Ekstraksi CV gagal');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function importExtractedFacts(): Promise<void> {
+    const candidates = selectedExtracted.flatMap((index) => {
+      const candidate = extractedCandidates[index];
+      return candidate ? [candidate] : [];
+    });
+    if (!extractionDocumentId || candidates.length === 0) return;
+    await run(async () => {
+      await callApi('/api/v1/profile/facts/import-extracted', {
+        method: 'POST', csrf: props.csrfToken, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: extractionDocumentId,
+          candidates: candidates.map(({ type, value }) => ({ type, value })),
+        }),
+      });
+      setExtractedCandidates([]);
+      setSelectedExtracted([]);
+      setMessage('Fakta hasil ekstraksi disimpan sebagai belum diverifikasi.');
     });
   }
 
@@ -662,6 +724,38 @@ export default function JobSearch(props: JobSearchProps) {
     });
   }
 
+  async function loadCompanyResearch(job: WorkspaceJob): Promise<void> {
+    try {
+      const result = await callApi<{ research: CompanyResearchResult[] }>(
+        `/api/v1/jobs/${job.id}/company-research`, { method: 'GET' },
+      );
+      setCompanyResearch((current) => ({ ...current, [job.id]: result.research }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Gagal memuat riset perusahaan');
+    }
+  }
+
+  async function researchCompany(job: WorkspaceJob): Promise<void> {
+    let sources: unknown;
+    try { sources = JSON.parse(researchInput[job.id] || '[]'); } catch {
+      setError('Sumber harus berupa JSON array yang valid.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Kirim kutipan sumber yang Anda masukkan dan nama perusahaan/role ke ${props.aiProviderModel ?? 'provider AI'}? URL tidak diakses oleh aplikasi.`,
+    );
+    if (!confirmed) return;
+    await run(async () => {
+      const result = await callApi<CompanyResearchResult>(`/api/v1/jobs/${job.id}/company-research`, {
+        method: 'POST', csrf: props.csrfToken,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sources, confirmDataTransfer: true }),
+      });
+      setCompanyResearch((current) => ({ [job.id]: [result, ...(current[job.id] ?? [])] }));
+      setMessage('Riset tersimpan dengan sumber dan kutipan untuk ditinjau.');
+    });
+  }
+
   async function archiveJob(job: WorkspaceJob): Promise<void> {
     const reason = window.prompt(
       `Arsipkan "${job.title}"? Tulis alasan (opsional) agar keputusan bisa ditinjau nanti:`,
@@ -779,6 +873,52 @@ export default function JobSearch(props: JobSearchProps) {
           Fakta hasil ekstraksi atau input manual berstatus belum diverifikasi. Hanya fakta
           terverifikasi yang boleh dipakai sebagai klaim final. Koreksi menyimpan versi baru.
         </p>
+        <div className="card" style={{ marginBottom: 12 }}>
+          <h3>Ekstrak saran dari CV</h3>
+          <div className="row" style={{ alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <label htmlFor="cv-extraction-document">Dokumen CV</label>
+              <select id="cv-extraction-document" value={extractionDocumentId} onChange={(event) => {
+                setExtractionDocumentId(event.target.value);
+                setExtractedCandidates([]);
+                setSelectedExtracted([]);
+              }}>
+                <option value="">Pilih CV</option>
+                {props.documents.filter((document) => document.kind === 'cv' && document.status === 'active')
+                  .map((document) => <option key={document.id} value={document.id}>{document.originalName}</option>)}
+              </select>
+            </div>
+            <button type="button" className="secondary" disabled={busy || !extractionDocumentId} onClick={() => void extractCvFacts()}>
+              Ekstrak secara lokal
+            </button>
+          </div>
+          <p className="muted" style={{ fontSize: '0.85rem' }}>
+            PDF, DOCX, atau TXT. Isi CV diproses di server ini tanpa dikirim ke AI. PDF scan tanpa teks perlu input manual; OCR belum tersedia.
+          </p>
+          {extractedCandidates.length > 0 && (
+            <div>
+              <ul>
+                {extractedCandidates.map((candidate, index) => (
+                  <li key={`${candidate.type}-${index}`} style={{ marginBottom: 8 }}>
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <input type="checkbox" checked={selectedExtracted.includes(index)} onChange={(event) => setSelectedExtracted((current) => event.target.checked
+                        ? [...current, index]
+                        : current.filter((item) => item !== index))} />
+                      <span>
+                        <strong>{FACT_TYPE_LABELS[candidate.type] ?? candidate.type}</strong> · keyakinan ekstraksi {Math.round(candidate.confidence * 100)}%
+                        <br />{describeValue(candidate.value)}
+                        {candidate.evidence.length > 0 && <small className="muted"><br />Bukti: {candidate.evidence.join(' · ')}</small>}
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <button type="button" disabled={busy || selectedExtracted.length === 0} onClick={() => void importExtractedFacts()}>
+                Simpan {selectedExtracted.length} fakta terpilih
+              </button>
+            </div>
+          )}
+        </div>
         <form className="row" onSubmit={addFact} style={{ alignItems: 'flex-end' }}>
           <div>
             <label htmlFor="fact-type">Jenis</label>
@@ -1294,6 +1434,39 @@ export default function JobSearch(props: JobSearchProps) {
                       </p>
                     </details>
                   ) : null}
+                  <details style={{ marginTop: 10 }} onToggle={(event) => {
+                    if ((event.currentTarget as HTMLDetailsElement).open && companyResearch[job.id] === undefined) {
+                      void loadCompanyResearch(job);
+                    }
+                  }}>
+                    <summary>Riset perusahaan</summary>
+                    <p className="muted" style={{ fontSize: '0.85rem' }}>
+                      Masukkan kutipan sumber yang sudah Anda temukan. Aplikasi tidak membuka URL; kutipan dan konteks lowongan dikirim ke provider setelah konfirmasi.
+                    </p>
+                    <label htmlFor={`research-sources-${job.id}`}>Sumber (JSON)</label>
+                    <textarea
+                      id={`research-sources-${job.id}`}
+                      rows={5}
+                      value={researchInput[job.id] ?? '[{"ref":"s1","title":"Profil perusahaan","url":"https://example.com","accessedAt":"2026-11-11","excerpt":"Kutipan sumber yang relevan"}]'}
+                      onChange={(event) => setResearchInput((current) => ({ ...current, [job.id]: event.target.value }))}
+                    />
+                    <button type="button" className="secondary" disabled={busy || !props.aiProviderReady} onClick={() => void researchCompany(job)}>
+                      Buat riset dengan AI
+                    </button>
+                    {(companyResearch[job.id] ?? []).map((research) => (
+                      <article className="card" key={research.id} style={{ marginTop: 10 }}>
+                        <strong>{research.status === 'complete' ? 'Ada dukungan sumber' : 'Bukti belum cukup'} · {research.checkedAt ? new Date(research.checkedAt).toLocaleString('id-ID') : ''}</strong>
+                        <p>{research.summary}</p>
+                        {research.claims.map((claim, index) => (
+                          <p key={`${research.id}-${index}`}>
+                            <strong>{claim.category} · {claim.confidence}:</strong> {claim.statement}
+                            <br /><small className="muted">Sumber {claim.sourceRefs.join(', ')}: “{claim.evidence}”</small>
+                          </p>
+                        ))}
+                        {research.openQuestions.length > 0 && <p className="muted">Pertanyaan terbuka: {research.openQuestions.join(' · ')}</p>}
+                      </article>
+                    ))}
+                  </details>
                 </div>
                 <div className="row" style={{ alignItems: 'flex-start' }}>
                   {job.listing.canonicalUrl ? (

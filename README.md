@@ -5,11 +5,13 @@ in [`requirement/`](./requirement) and is treated as **read-only source of truth
 implementation decisions and their status are tracked in
 [`docs/decisions.md`](./docs/decisions.md).
 
-Current implementation: **Phase 0–3 P0, safe Phase 4 slices, and Phase 5 provider adapters**
+Current implementation: **Phase 0–3 P0, safe Phase 4 slices, and selected Phase 5 P1 workflows**
 (private foundation, profile/manual job search, evidence-linked ranking,
 consented AI review, versioned CV/cover PDFs, application-specific screening
-answers, manual tracking, saved searches, JobStreet manual handoff, local
-preflight snapshots, approvals, and dry-runs) — see
+answers and interview preparation, manual tracking, CV fact extraction,
+company research from owner-provided sources, scheduled searches over the local
+catalog, in-app notifications, JobStreet manual handoff, local preflight
+snapshots, approvals, and dry-runs) — see
 [`docs/implementation-status.md`](./docs/implementation-status.md).
 
 ## What works today
@@ -33,6 +35,9 @@ preflight snapshots, approvals, and dry-runs) — see
   disables browser submission and opens a global recovery hold.
 - Candidate profile with optimistic versioning and versioned facts
   (`unverified`, `verified`, `retracted`), including private source documents.
+- Local CV text extraction for PDF, DOCX, and TXT. Owners preview suggestions
+  before importing them as unverified facts; scanned PDFs still need manual
+  entry because OCR is not included.
 - Manual job import (`owner_paste` provenance), canonical URL validation without
   fetching, stable listing identity, revision history, deduplication suggestions,
   bookmark/archive curation and local text filters.
@@ -56,6 +61,9 @@ preflight snapshots, approvals, and dry-runs) — see
   and selected verified profile facts; only those facts and the saved posting are
   sent. Output must cite supplied fact versions and exact posting excerpts, is
   shown as a draft for owner review, and has no application-submit capability.
+- Company research accepts up to eight source excerpts supplied by the owner.
+  URLs are recorded as citations but never fetched; research requires transfer
+  consent and every supported claim is checked against an exact excerpt.
 - Per-application CV and cover-letter drafts use selected verified facts, retain
   fact-version provenance, support immutable revisions and owner review, and
   produce private PDFs with local text-layer, structure and page-layout checks.
@@ -63,6 +71,13 @@ preflight snapshots, approvals, and dry-runs) — see
   at rest and linked to source fact versions. Sensitive or unknown questions
   require owner input; suggestions are copied/reviewed manually and never
   auto-filled into a portal.
+- Interview preparation uses the saved posting and selected verified profile
+  facts only. It requires consent before provider transfer, checks cited facts
+  and posting excerpts, encrypts saved output, and leaves unsupported answer
+  sections for owner input.
+- Saved searches can run on a weekday/time schedule in an IANA timezone. Runs
+  search the local catalog only; the in-app inbox reports new or revised
+  listings after the initial baseline run.
 - Local Portal Assist fixture creates version-bound preflight snapshots, checks
   reviewed documents and verified source facts, binds candidate facts by hash,
   supports owner approval/revocation, and records dry-runs as `simulated`. It
@@ -88,9 +103,9 @@ preflight snapshots, approvals, and dry-runs) — see
   endpoints.
 
 Not built yet: real portal accounts/sessions, browser-attempt creation and live
-worker dispatch, automated portal evidence capture/reconciliation, schedule
-configuration/execution, and notification channels. Saved searches are
-user-triggered filters; saving one does not start a schedule or background search.
+worker dispatch, automated portal evidence capture/reconciliation, qualified
+external job-source adapters, and notification channels outside the dashboard.
+Scheduled searches cover only listings already present in the local catalog.
 JobStreet is selected for manual handoff only: its published terms restrict
 automated access without a specifically permitted interface and applicable
 terms. The local CV/cover template is intentionally plain text;
@@ -177,16 +192,20 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 | Documents | `GET/POST /api/v1/documents`, `GET /api/v1/documents/{id}/download`, `DELETE /api/v1/documents/{id}` |
 | Privacy | `POST /api/v1/privacy/exports`, `POST /api/v1/privacy/deletions`, `GET /api/v1/privacy/requests/{id}`, `GET /api/v1/privacy/requests/{id}/download` |
 | Profile | `GET/PATCH /api/v1/profile`, `GET/POST /api/v1/profile/facts`, `PATCH /api/v1/profile/facts/{id}` |
+| CV extraction | `POST /api/v1/profile/fact-extractions`, `POST /api/v1/profile/facts/import-extracted` |
 | Jobs | `GET /api/v1/jobs`, `GET /api/v1/jobs/{id}`, `PATCH /api/v1/jobs/{id}`, `POST /api/v1/jobs/imports` |
 | Saved searches | `GET/POST /api/v1/saved-searches`, `GET/PATCH/DELETE /api/v1/saved-searches/{id}` |
+| Search automation | `GET/POST /api/v1/schedules`, `PATCH/DELETE /api/v1/schedules/{id}`, `GET /api/v1/notifications`, `PATCH /api/v1/notifications/{id}` |
 | Evaluations | `GET/POST /api/v1/jobs/{id}/evaluations`, `GET /api/v1/jobs/{id}/evaluations/{evaluationId}` |
 | AI provider/review | `GET/PUT/POST /api/v1/ai/provider`, `GET/POST /api/v1/jobs/{id}/ai-reviews` |
+| Company research | `GET/POST /api/v1/jobs/{id}/company-research` |
 | Duplicates | `GET /api/v1/duplicate-suggestions`, `POST /api/v1/duplicate-suggestions/{id}/resolve` |
 | Applications | `GET/POST /api/v1/applications`, `GET/PATCH /api/v1/applications/{id}` |
 | Application lifecycle | `POST /api/v1/applications/{id}/cancel`, `POST /api/v1/applications/{id}/reopen` (cancelled → draft, not_submitted → ready_for_review) |
 | Tracker | `POST /api/v1/applications/{id}/manual-submissions`, `PATCH /api/v1/applications/{id}/recruitment-stage`, `GET /api/v1/applications/{id}/events` |
 | Answer bank | `GET/POST /api/v1/answer-bank`, `PATCH /api/v1/answer-bank/{id}`, `POST /api/v1/answer-bank/suggest` |
 | Application drafts | `GET/POST /api/v1/applications/{id}/answers`, `GET/POST /api/v1/applications/{id}/documents`, `PATCH /api/v1/applications/{id}/documents/{versionId}`, `POST /api/v1/applications/{id}/documents/{versionId}/review` |
+| Interview preparation | `GET/POST /api/v1/applications/{id}/interview-prep` |
 | Local Portal Assist fixture | `POST /api/v1/applications/{id}/preflights`, `GET /api/v1/applications/{id}/review`, `POST /api/v1/applications/{id}/approvals`, `POST /api/v1/approvals/{id}/revoke`, `POST /api/v1/applications/{id}/dry-runs` |
 | Submission settings | `GET/PATCH /api/v1/submission-settings` (quota policy only; browser enablement remains blocked) |
 | Attempt cancellation | `POST /api/v1/applications/{id}/attempts/{attemptId}/cancel` (before dispatch intent only) |

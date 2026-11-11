@@ -76,6 +76,40 @@ interface SavedApplicationAnswer {
   history: Array<{ versionNo: number; verificationStatus: string; createdAt: string }>;
 }
 
+interface InterviewPack {
+  id: string;
+  applicationId: string;
+  postingRevisionId: string | null;
+  versionNo: number;
+  documentVersionIds: string[];
+  sourceFactVersionIds: string[];
+  model: string | null;
+  promptVersion: string | null;
+  status: 'queued' | 'running' | 'ready' | 'failed';
+  content: {
+    openingSummary: { text: string; sourceFactVersionIds: string[] };
+    likelyQuestions: Array<{
+      question: string;
+      answerOutline: string;
+      sourceFactVersionIds: string[];
+      postingEvidence: string;
+      needsUserInput: boolean;
+    }>;
+    starStories: Array<{
+      title: string;
+      situation: string | null;
+      task: string | null;
+      action: string | null;
+      result: string | null;
+      sourceFactVersionIds: string[];
+      needsUserInput: Array<'situation' | 'task' | 'action' | 'result'>;
+    }>;
+    gapsToReview: Array<{ topic: string; postingEvidence: string; note: string }>;
+    questionsForInterviewer: string[];
+  } | null;
+  createdAt: string;
+}
+
 export interface TrackerEvent {
   id: number;
   eventType: string;
@@ -185,6 +219,8 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
   const [answerConfirmed, setAnswerConfirmed] = useState<Record<string, boolean>>({});
   const [answerExpectedVersions, setAnswerExpectedVersions] = useState<Record<string, number | undefined>>({});
   const [answerSuggestionMessages, setAnswerSuggestionMessages] = useState<Record<string, string>>({});
+  const [interviewPacks, setInterviewPacks] = useState<Record<string, InterviewPack[]>>({});
+  const [interviewFactIds, setInterviewFactIds] = useState<Record<string, string[]>>({});
 
   const run = useCallback(
     async (action: () => Promise<void>) => {
@@ -394,6 +430,36 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
       { method: 'GET' },
     );
     setApplicationAnswers((current) => ({ ...current, [applicationId]: result.answers }));
+  }
+
+  async function loadInterviewPacks(applicationId: string): Promise<void> {
+    const result = await callApi<{ packs: InterviewPack[] }>(
+      `/api/v1/applications/${applicationId}/interview-prep`,
+      { method: 'GET' },
+    );
+    setInterviewPacks((current) => ({ ...current, [applicationId]: result.packs }));
+  }
+
+  async function createInterviewPack(applicationId: string): Promise<void> {
+    const factIds = interviewFactIds[applicationId] ?? [];
+    if (!factIds.length) {
+      setError('Pilih minimal satu fakta terverifikasi untuk persiapan interview.');
+      return;
+    }
+    const confirmed = window.confirm(
+      'Fakta terverifikasi dan deskripsi lowongan akan dikirim ke provider AI yang Anda konfigurasi untuk membuat materi persiapan interview. Lanjutkan?',
+    );
+    if (!confirmed) return;
+    await run(async () => {
+      await callApi(`/api/v1/applications/${applicationId}/interview-prep`, {
+        method: 'POST',
+        csrf: props.csrfToken,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ factIds, confirmDataTransfer: true }),
+      });
+      await loadInterviewPacks(applicationId);
+      setMessage('Materi interview dibuat. Periksa semua jawaban dan isi bagian yang membutuhkan input Anda.');
+    });
   }
 
   async function suggestApplicationAnswer(applicationId: string): Promise<void> {
@@ -789,6 +855,91 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
                       ))}
                     </ul>
                   ) : null}
+                </details>
+                <details
+                  style={{ marginTop: 10 }}
+                  onToggle={(event) => {
+                    if (event.currentTarget.open && interviewPacks[application.id] === undefined) {
+                      void loadInterviewPacks(application.id).catch((cause) => {
+                        setError(cause instanceof Error ? cause.message : 'Materi interview gagal dimuat');
+                      });
+                    }
+                  }}
+                >
+                  <summary>Persiapan interview ({(interviewPacks[application.id] ?? []).length})</summary>
+                  <p className="muted" style={{ fontSize: '0.82rem' }}>
+                    Materi dibuat dari deskripsi lowongan tersimpan dan fakta profil terverifikasi yang Anda pilih.
+                    Provider AI menerima data tersebut setelah konfirmasi; hasilnya tetap perlu ditinjau dan tidak mengisi portal.
+                  </p>
+                  <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: '8px 0' }}>
+                    <legend>Fakta terverifikasi yang boleh dipakai</legend>
+                    {props.facts.filter((fact) => fact.verificationStatus === 'verified' && ['education', 'work_experience', 'skill', 'language'].includes(fact.type)).length ? (
+                      <ul className="card-list">
+                        {props.facts.filter((fact) => fact.verificationStatus === 'verified' && ['education', 'work_experience', 'skill', 'language'].includes(fact.type)).map((fact) => {
+                          const selected = interviewFactIds[application.id] ?? [];
+                          return (
+                            <li key={fact.id}>
+                              <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={selected.includes(fact.id)}
+                                  onChange={(event) => setInterviewFactIds((current) => ({
+                                    ...current,
+                                    [application.id]: event.target.checked
+                                      ? [...new Set([...(current[application.id] ?? []), fact.id])]
+                                      : (current[application.id] ?? []).filter((id) => id !== fact.id),
+                                  }))}
+                                />
+                                <span><strong>{fact.type}</strong> · {JSON.stringify(fact.value)}</span>
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : <p className="muted">Belum ada fakta terverifikasi yang dapat dipakai.</p>}
+                  </fieldset>
+                  <button type="button" disabled={busy} onClick={() => void createInterviewPack(application.id)}>
+                    Buat materi interview
+                  </button>
+                  {(interviewPacks[application.id] ?? []).map((pack) => (
+                    <article key={pack.id} className="panel" style={{ marginTop: 12 }}>
+                      <h4>Versi {pack.versionNo} · {new Date(pack.createdAt).toLocaleString('id-ID')}</h4>
+                      {pack.content ? <>
+                        <h5>Ringkasan pembuka</h5>
+                        <p>{pack.content.openingSummary.text}</p>
+                        <p className="muted">Sumber fakta: {pack.content.openingSummary.sourceFactVersionIds.length} versi terverifikasi</p>
+                        <h5>Pertanyaan yang mungkin muncul</h5>
+                        <ul>{pack.content.likelyQuestions.map((item, index) => (
+                          <li key={`${pack.id}-q-${index}`}>
+                            <strong>{item.question}</strong>
+                            <p>{item.answerOutline || 'Perlu diisi oleh Anda.'}</p>
+                            <p className="muted">Bukti lowongan: “{item.postingEvidence}” · {item.needsUserInput ? 'perlu input Anda' : `${item.sourceFactVersionIds.length} fakta sumber`}</p>
+                          </li>
+                        ))}</ul>
+                        <h5>Latihan STAR</h5>
+                        <ul>{pack.content.starStories.map((story, index) => (
+                          <li key={`${pack.id}-star-${index}`}>
+                            <strong>{story.title}</strong>
+                            <ul>
+                              {(['situation', 'task', 'action', 'result'] as const).map((field) => (
+                                <li key={field}><strong>{field}:</strong> {story[field] ?? 'Perlu diisi oleh Anda.'}</li>
+                              ))}
+                            </ul>
+                          </li>
+                        ))}</ul>
+                        {pack.content.gapsToReview.length ? <>
+                          <h5>Topik untuk ditinjau</h5>
+                          <ul>{pack.content.gapsToReview.map((gap, index) => <li key={`${pack.id}-gap-${index}`}>
+                            <strong>{gap.topic}</strong> · {gap.note}<p className="muted">“{gap.postingEvidence}”</p>
+                          </li>)}</ul>
+                        </> : null}
+                        {pack.content.questionsForInterviewer.length ? <>
+                          <h5>Pertanyaan untuk interviewer</h5>
+                          <ul>{pack.content.questionsForInterviewer.map((question, index) => <li key={`${pack.id}-i-${index}`}>{question}</li>)}</ul>
+                        </> : null}
+                      </> : <p className="muted">Status: {pack.status}. Materi belum tersedia.</p>}
+                    </article>
+                  ))}
                 </details>
                 <SubmissionPreflight
                   csrfToken={props.csrfToken}

@@ -96,6 +96,39 @@ function hasPhrase(text: string, phrase: string): boolean {
   return Boolean(normalizedPhrase) && ` ${normalizedText} `.includes(` ${normalizedPhrase} `);
 }
 
+// A small explicit vocabulary keeps the deterministic evaluator explainable.
+const TECHNICAL_SKILL_ALIASES: Record<string, string[]> = {
+  javascript: ['javascript', 'js'],
+  typescript: ['typescript', 'ts'],
+  nodejs: ['node.js', 'nodejs', 'node js'],
+  postgresql: ['postgresql', 'postgres', 'postgre sql'],
+  kubernetes: ['kubernetes', 'k8s'],
+  'amazon web services': ['amazon web services', 'aws'],
+  'google cloud platform': ['google cloud platform', 'google cloud', 'gcp'],
+  'microsoft azure': ['microsoft azure', 'azure'],
+  'spring boot': ['spring boot', 'springboot'],
+  'rest api': ['rest api', 'restful api', 'restful apis', 'rest apis'],
+  'ci/cd': ['ci/cd', 'ci cd', 'continuous integration', 'continuous delivery', 'continuous deployment'],
+};
+
+function skillAliases(term: string): string[] {
+  const normalized = normalize(term);
+  return Object.values(TECHNICAL_SKILL_ALIASES).find((aliases) =>
+    aliases.some((alias) => normalize(alias) === normalized),
+  ) ?? [term];
+}
+
+function skillMatchExcerpt(text: string, term: string): string | null {
+  for (const alias of skillAliases(term)) {
+    const escaped = alias.split(/\s+/u)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('\\s+');
+    const found = text.match(new RegExp(`(^|[^\\p{L}\\p{N}])(${escaped})(?=$|[^\\p{L}\\p{N}])`, 'iu'));
+    if (found?.[2]) return found[2];
+  }
+  return null;
+}
+
 function tokens(value: string): string[] {
   return [...new Set(
     normalize(value)
@@ -139,11 +172,12 @@ function preferenceEvidence(key: string, value: string): EvaluationEvidence {
   return { kind: 'preference', reference: `preferences.${key}`, excerpt: value };
 }
 
-function postingEvidence(input: EvaluationInput): EvaluationEvidence[] {
+function postingEvidence(input: EvaluationInput, excerpt?: string): EvaluationEvidence[] {
   if (!input.postingRevisionId) return [];
   return [{
     kind: 'posting_revision',
     reference: `posting_revision:${input.postingRevisionId}`,
+    ...(excerpt ? { excerpt } : {}),
   }];
 }
 
@@ -282,10 +316,13 @@ export function scoreJob(input: EvaluationInput): EvaluationComputation {
   const hardFilters: HardFilterResult[] = [];
 
   const skillMatches = descriptionAvailable
-    ? verifiedSkills.filter(({ term }) => hasPhrase(postingText, term))
+    ? verifiedSkills.flatMap((item) => {
+      const excerpt = skillMatchExcerpt(postingText, item.term);
+      return excerpt ? [{ ...item, excerpt }] : [];
+    })
     : [];
   const skillGaps = descriptionAvailable
-    ? verifiedSkills.filter(({ term }) => !hasPhrase(postingText, term)).map(({ term }) => term)
+    ? verifiedSkills.filter(({ term }) => !skillMatchExcerpt(postingText, term)).map(({ term }) => term)
     : [];
   const technicalScore = descriptionAvailable && verifiedSkills.length
     ? (skillMatches.length / verifiedSkills.length) * 100
@@ -297,9 +334,12 @@ export function scoreJob(input: EvaluationInput): EvaluationComputation {
       ? descriptionAvailable
         ? 'Belum ada skill terverifikasi untuk dibandingkan.'
         : 'Deskripsi posting belum tersedia; skor teknis tidak dihitung dari judul saja.'
-      : `${skillMatches.length} dari ${verifiedSkills.length} skill terverifikasi disebut persis pada teks posting. Ini ukuran cakupan kata yang disebut, bukan peluang diterima.`,
+      : `${skillMatches.length} dari ${verifiedSkills.length} skill terverifikasi disebut langsung atau melalui alias teknis yang dibatasi pada teks posting. Ini ukuran cakupan kata yang disebut, bukan peluang diterima.`,
     [
-      ...skillMatches.map(({ term, fact }) => factEvidence(fact, term)),
+      ...skillMatches.flatMap(({ term, fact, excerpt }) => [
+        factEvidence(fact, term),
+        ...postingEvidence(input, excerpt),
+      ]),
       ...postingEvidence(input),
     ],
     skillGaps,

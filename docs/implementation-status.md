@@ -3,7 +3,7 @@
 Tracks execution of `requirement/08-IPD-Implementation-Plan.md`. The requirement
 package remains unchanged and authoritative.
 
-Last updated: 2026-11-10.
+Last updated: 2026-11-11.
 
 ## Phase 0 — Discovery & integration
 
@@ -38,10 +38,10 @@ Verification (local, 2026-11-08):
 
 | Epic | Status | What exists |
 |---|---|---|
-| E04 Profile | Done (manual entry) | Lazy profile row per owner, optimistic `version`, timezone in `users`, versioned facts with `unverified/verified/retracted`, owner-confirmed verification, source document linkage, correction creates a new fact version and invalidates prior verification. |
+| E04 Profile | Done (manual + local CV extraction) | Lazy profile row per owner, optimistic `version`, timezone in `users`, versioned facts with `unverified/verified/retracted`, owner-confirmed verification, source document linkage, correction creates a new fact version and invalidates prior verification. PDF/DOCX/TXT text extraction is local, previewed by the owner, and imports only as unverified facts; scanned PDFs need manual entry. |
 | E05 Sources | Done for manual path | `manual` source, `POST /jobs/imports` with required `Idempotency-Key`, provenance `owner_paste`, URL validation **without fetching**, stable external identity, revision history. Live adapters remain disabled (DEC-04/DEC-16). |
 | E06 Job model | Done | Canonical URL normalization, normalized company/title/location, cross-source duplicate suggestions with manual merge/reject, merge conflict when both jobs have applications, bookmark/archive/ignore-reason curation with `version`, local text filter. |
-| UI | Done | Dashboard sections for profile, facts, manual import, duplicate review, job filter/bookmark/archive. |
+| UI | Done | Dashboard sections for profile, facts, local CV extraction, manual import, duplicate review, job filter/bookmark/archive. |
 
 Verification (local, 2026-11-09):
 
@@ -70,7 +70,9 @@ Requirement traceability (Phase 2):
 |---|---|---|
 | E09 Tracker | Done for P0 manual path | One draft application per job, owner notes with `current_version`, manual submission records (`mode=manual`, `state=submitted_confirmed`, `confirmation_source=manual`), target lock per job, separation from recruitment stage, timeline events, no worker task/quota consumption, deterministic conflict when a `submit_unknown` attempt exists, versioned cancellation, and reopen from `cancelled` to `draft` or `not_submitted` to `ready_for_review`. Reopen blocks when a matching target is unknown or already confirmed. Active-attempt cancellation checks intent and releases reserved quota. Submission records may attach only reviewed, latest document versions belonging to that application. |
 | E08 Documents/Q&A | Done for P0 local path | CV/cover drafts use only explicitly selected verified facts, retain source fact-version IDs, support immutable edits and owner review, and generate private PDFs with text-layer, structure, page-count and layout checks. Application-scoped screening answers have encrypted content, immutable history and provenance; sensitive/unknown questions require owner input. No portal autofill. |
-| E07 AI/evaluation | Done for P0 with owner review outstanding | Local evidence-based scoring remains deterministic and provisional. Dashboard-configured OpenAI-compatible provider supports a fixed connection test and separately consented job review using only selected verified facts plus the saved posting. API key is encrypted, write-only, endpoint origins are allowlisted, output is schema/evidence checked, and no fallback or submit authority exists. |
+| E07 AI/evaluation | Done for P0 with owner review outstanding | Local evidence-based scoring remains deterministic and provisional; technical skill aliases are explicit and scoring evidence cites posting text. Dashboard-configured providers support fixed connection tests and separately consented job review using selected verified facts plus the saved posting. API keys are encrypted, write-only, endpoint origins are allowlisted, output is schema/evidence checked, and there is no fallback or submit authority. |
+| E08 Interview preparation | Partial P1 | Per-application interview packs use selected verified facts and the saved posting after explicit provider-transfer consent. Fact IDs and exact posting excerpts are validated; unsupported answers remain for owner input. Stored content is encrypted and included in privacy exports. |
+| E07 Company research | Partial P1 | Owner-provided source excerpts can be summarized after explicit provider-transfer consent. URLs are not fetched; supported claims must cite supplied sources and exact excerpts. |
 
 Verification (Phase 3 update, 2026-11-10):
 
@@ -188,12 +190,13 @@ Requirement traceability (Phase 4 implemented slices):
 | PR-15 / UAT-54 (partial) | Preflight and dry-run create owner audit events with IDs/counts and no answer/CV payloads. |
 | UAT-19–22, UAT-28–30, UAT-42–44, UAT-48–49 | Not implemented: live dispatch lifecycle, portal race-stop and automated portal evidence, cross-listing target identity, and live restore-loss recovery. |
 
-## Phase 5 — Perluasan P1 (provider adapter slice)
+## Phase 5 — Perluasan P1 (provider, schedule, and notification slices)
 
 | Epic | Status | What exists |
 |---|---|---|
-| E06 Saved searches | Partial | Owner-scoped saved-search create/read/update/delete API and dashboard controls to save, load, update, and delete query/status/source/sort filters. Changes are versioned and audited; data is included in workspace exports. No schedule is created or run from a saved search. |
+| E06 Saved searches | Done for local catalog | Owner-scoped saved-search create/read/update/delete API and dashboard controls to save, load, update, and delete query/status/source/sort filters. Changes are versioned and audited; searches can be scheduled against the local catalog. No source adapter is invoked by a scheduled run. |
 | E12 AI providers | Partial | Dashboard-configured OpenAI-compatible, native Gemini `generateContent`, and Anthropic Messages adapters. All use a fixed JSON connection test, exact HTTPS base-URL allowlisting, encrypted write-only API keys in provider-specific headers, bounded responses/timeouts, usage-token reporting where available, and no automatic provider fallback. Switching provider/model invalidates the previous passing connection test. |
+| Schedule and in-app notifications | Partial P1 | Owner-scoped schedule CRUD with optimistic versions, IANA timezone and DST slot resolution; worker materializes due runs, searches only the owner’s local indexed catalog, and stores run/listing history. New or revised listings after a baseline run appear in the dashboard inbox. No email, Telegram, or external source fetching is enabled. |
 
 Verification for this slice:
 
@@ -204,6 +207,10 @@ Verification for this slice:
   suite passes for all three adapters. The saved-search integration and export
   coverage pass as part of the full suite (25 files, 144 tests).
 - Live provider account/model compatibility and owner UAT remain unverified.
+- For this implementation update, `npm run typecheck`, `npm run lint`, and
+  `npm run build` pass.
+  Automated tests were not run for this update; live provider/source behavior and
+  owner UAT remain unverified.
 
 ## Requirement traceability (foundation)
 
@@ -225,7 +232,7 @@ signed off by the owner.
 ## Not started yet
 
 - Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, automated portal evidence validation, cross-listing target identity, pilot backup/portal restore verification, and owner live UAT. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
-- Phase 5 remaining: schedule configuration/execution, notification channels, and source adapters that pass policy and adapter qualification.
+- Phase 5 remaining: qualified external source adapters, notifications outside the dashboard, and additional schedule/source UAT.
 - Phase 6: Gmail/Notion and learning-plan integrations remain deferred pending owner decisions and privacy review.
 - Live provider credentials, production deployment, and external ATS/client compatibility checks remain open.
 - Owner confirmation of the proposed ranking rubric, live end-to-end/UAT sign-off, and restore drill against the actual pilot backup and portal history.
@@ -243,8 +250,8 @@ signed off by the owner.
 - Duplicate detection only compares normalized company + title tokens. It is
   intentionally conservative and only proposes cross-source pairs; Phase 3
   ranking may add a stronger fingerprint.
-- Saved searches are owner-triggered filters only; schedule configuration and
-  execution are still open Phase 5 work.
+- Scheduled searches currently compare the local catalog only; they do not
+  fetch external sources. A first run establishes the notification baseline.
 - Profile facts accept free-form JSON values; type-specific schemas can be added
   when extraction templates are defined.
 - Manual submission uses `target_key = job:<id>`; cross-listing verification and
@@ -255,7 +262,8 @@ signed off by the owner.
 - The P0 CV/cover layout is a plain-text local template, not a branded design.
   PDF checks validate structure, text layer and page limits; visual rendering
   and ATS compatibility still require owner review on the target deployment.
-- Application cancellation/reopen and Gmail-based suggestions are not implemented.
+- Gmail-based suggestions and notification channels outside the dashboard are
+  not implemented.
 - Answer-bank suggestions are deterministic; application-specific answer drafts
   are saved for manual copy/review and are never auto-filled into a portal.
 - AI job review is a separate advisory draft, not part of the deterministic

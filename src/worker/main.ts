@@ -12,6 +12,7 @@ import {
   type TaskRecord,
 } from '@/lib/queue/tasks';
 import { SUPPORTED_TASK_KINDS, taskHandlers } from '@/worker/handlers';
+import { materializeDueScheduleOccurrences } from '@/lib/schedule/service';
 
 const LEASE_SECONDS = 60;
 const IDLE_POLL_MS = 1_000;
@@ -56,7 +57,15 @@ async function main(): Promise<void> {
         if (requeued || failed) log('lease_sweep', { requeued, failed });
       })
       .catch((error: unknown) => log('lease_sweep_failed', { message: String(error) }));
+    materializeDueScheduleOccurrences()
+      .then((created) => {
+        if (created) log('schedule_occurrences_materialized', { created });
+      })
+      .catch((error: unknown) => log('schedule_materialization_failed', { message: String(error) }));
   }, SWEEP_INTERVAL_MS);
+  await materializeDueScheduleOccurrences().catch((error: unknown) => {
+    log('schedule_materialization_failed', { message: String(error) });
+  });
 
   while (!stopping) {
     let task: TaskRecord | null = null;

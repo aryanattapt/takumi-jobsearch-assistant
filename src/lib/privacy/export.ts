@@ -128,6 +128,36 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
         ORDER BY created_at`,
       [ownerId],
     );
+    const schedules = await query(
+      `SELECT id, timezone, rule, search_config_id, enabled, version, notify_in_app, created_at, updated_at
+         FROM schedules WHERE owner_id = $1 ORDER BY created_at`,
+      [ownerId],
+    );
+    const scheduleOccurrences = await query(
+      `SELECT o.* FROM schedule_occurrences o JOIN schedules s ON s.id = o.schedule_id
+        WHERE s.owner_id = $1 ORDER BY o.scheduled_for_utc`,
+      [ownerId],
+    );
+    const searchRuns = await query(
+      `SELECT id, query_snapshot, status, started_at, finished_at, schedule_occurrence_id, created_at
+         FROM search_runs WHERE owner_id = $1 ORDER BY created_at`,
+      [ownerId],
+    );
+    const searchRunSources = await query(
+      `SELECT rs.* FROM search_run_sources rs JOIN search_runs r ON r.id = rs.run_id
+        WHERE r.owner_id = $1 ORDER BY rs.created_at`,
+      [ownerId],
+    );
+    const searchRunListings = await query(
+      `SELECT rl.* FROM search_run_listings rl JOIN search_runs r ON r.id = rl.run_id
+        WHERE r.owner_id = $1 ORDER BY rl.seen_at`,
+      [ownerId],
+    );
+    const notifications = await query(
+      `SELECT id, event_key, channel_id, status, payload, sent_at, error_code, read_at, created_at
+         FROM notifications WHERE owner_id = $1 ORDER BY created_at`,
+      [ownerId],
+    );
     const evaluations = await query(
       `SELECT id, job_id, evaluation_version, profile_version,
               posting_revision_id, rubric_version, score_json, score,
@@ -142,6 +172,11 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
               provider_type, model, prompt_version, schema_version, result_json,
               input_tokens, output_tokens, latency_ms, created_at
          FROM ai_job_reviews WHERE owner_id = $1 ORDER BY created_at`,
+      [ownerId],
+    );
+    const companyResearch = await query(
+      `SELECT id, job_id, summary, claims_json, checked_at, status, created_at
+         FROM company_research WHERE owner_id = $1 ORDER BY created_at`,
       [ownerId],
     );
     const applications = await query(
@@ -264,6 +299,22 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
       'SELECT * FROM application_document_versions WHERE owner_id = $1 ORDER BY created_at',
       [ownerId],
     );
+    const interviewPackRows = await query<{
+      id: string;
+      application_id: string;
+      posting_revision_id: string | null;
+      version_no: number;
+      document_version_ids: string[];
+      content_ciphertext: Buffer | null;
+      source_fact_version_ids: string[];
+      model: string | null;
+      prompt_version: string | null;
+      status: string;
+      created_at: Date;
+    }>(
+      `SELECT * FROM interview_packs WHERE owner_id = $1 ORDER BY created_at`,
+      [ownerId],
+    );
     const answers = await query<{
       question_key: string;
       question_text: string;
@@ -372,6 +423,26 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
         unavailable.push({ path: `application-documents/${document.id}`, reason: 'DOCUMENT_DRAFT_DECRYPTION_UNAVAILABLE' });
       }
     }
+    const exportedInterviewPacks: unknown[] = [];
+    for (const pack of interviewPackRows) {
+      try {
+        exportedInterviewPacks.push({
+          id: pack.id,
+          applicationId: pack.application_id,
+          postingRevisionId: pack.posting_revision_id,
+          versionNo: pack.version_no,
+          documentVersionIds: pack.document_version_ids,
+          content: pack.content_ciphertext ? JSON.parse(decryptSecret(pack.content_ciphertext)) : null,
+          sourceFactVersionIds: pack.source_fact_version_ids,
+          model: pack.model,
+          promptVersion: pack.prompt_version,
+          status: pack.status,
+          createdAt: pack.created_at,
+        });
+      } catch {
+        unavailable.push({ path: `applications/interview-prep/${pack.id}`, reason: 'INTERVIEW_PREP_DECRYPTION_UNAVAILABLE' });
+      }
+    }
 
     const zip = new ZipFile();
     const files: ExportFileEntry[] = [];
@@ -395,8 +466,10 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
     add('documents.json', { documents, documentVersions });
     add('jobs.json', { jobs });
     add('saved-searches.json', { savedSearches });
+    add('search-automation.json', { schedules, occurrences: scheduleOccurrences, runs: searchRuns, runSources: searchRunSources, runListings: searchRunListings, notifications });
     add('evaluations.json', { evaluations });
     add('ai-reviews.json', { reviews: aiJobReviews });
+    add('company-research.json', { research: companyResearch });
     add('applications.json', {
       applications,
       attempts: applicationAttempts,
@@ -407,6 +480,7 @@ export async function runExport(ownerId: string, payload: ExportPayload): Promis
       answers: exportedApplicationAnswers,
       answerVersions: exportedApplicationAnswerVersions,
       documentDraftVersions: exportedApplicationDocuments,
+      interviewPreparation: exportedInterviewPacks,
     });
     add('submission-quota.json', {
       buckets: submissionQuotaBuckets,

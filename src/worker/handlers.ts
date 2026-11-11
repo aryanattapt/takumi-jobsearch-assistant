@@ -1,5 +1,6 @@
 import { runExport } from '@/lib/privacy/export';
 import { runDocumentPurge, runWorkspaceReset } from '@/lib/privacy/purge';
+import { runScheduledSearch } from '@/lib/schedule/runner';
 
 export interface TaskContext {
   taskId: string;
@@ -37,6 +38,9 @@ export const taskHandlers: Record<string, TaskHandler> = {
       { privacyRequestId: uuidArg(payload, 'privacyRequestId') },
       { taskId: context.taskId },
     );
+  },
+  'search.run': async (ownerId, payload) => {
+    await runScheduledSearch(ownerId, uuidArg(payload, 'runId'));
   },
   'noop.echo': async () => {
     // Used by integration tests to exercise leasing without side effects.

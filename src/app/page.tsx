@@ -9,6 +9,7 @@ import AiProviderSettings from '@/components/ai-provider-settings';
 import SubmissionSettings from '@/components/submission-settings';
 import ApplicationTracker from '@/components/application-tracker';
 import JobSearch from '@/components/job-search';
+import SearchAutomation from '@/components/search-automation';
 import {
   answerDto,
   aiJobReviewDto,
@@ -189,6 +190,7 @@ export default async function Page() {
             id: document.id,
             originalName: document.originalName,
             kind: document.kind,
+            mediaType: document.mediaType,
             status: document.status,
           }))}
           aiProviderReady={Boolean(aiProvider?.enabled && aiProvider.lastTestStatus === 'passed')}
@@ -204,6 +206,11 @@ export default async function Page() {
             updatedAt: savedSearch.updated_at.toISOString(),
           }))}
           sourceOptions={sources}
+        />
+        <SearchAutomation
+          csrfToken={session.csrfToken}
+          timezone={session.timezone}
+          savedSearches={savedSearches.map((savedSearch) => ({ id: savedSearch.id, name: savedSearch.name }))}
         />
         <AiProviderSettings
           csrfToken={session.csrfToken}

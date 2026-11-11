@@ -266,6 +266,75 @@ export async function createFact(
   });
 }
 
+export async function createFactsFromExtraction(
+  ownerId: string,
+  sourceDocumentId: string,
+  candidates: Array<{ type: FactType; value: unknown }>,
+  requestId?: string,
+): Promise<FactRow[]> {
+  if (candidates.length < 1 || candidates.length > 20) {
+    throw apiErrors.invalidInput('Select between 1 and 20 extracted facts');
+  }
+  const serializedSize = candidates.reduce((total, item) => {
+    let size: number;
+    try {
+      size = Buffer.byteLength(JSON.stringify(item.value), 'utf8');
+    } catch {
+      throw apiErrors.invalidInput('An extracted fact cannot be serialized');
+    }
+    if (size > 8_000) throw apiErrors.invalidInput('An extracted fact exceeds the size limit');
+    return total + size;
+  }, 0);
+  if (serializedSize > 40_000) throw apiErrors.invalidInput('Extracted facts exceed the request size limit');
+
+  await ensureProfile(ownerId);
+  return withTransaction(async (client) => {
+    await client.query('SELECT id FROM candidate_profiles WHERE owner_id = $1 FOR UPDATE', [ownerId]);
+    const cv = await client.query(
+      `SELECT 1 FROM documents WHERE id = $1 AND owner_id = $2 AND status = 'active' AND kind = 'cv'`,
+      [sourceDocumentId, ownerId],
+    );
+    if (!cv.rowCount) throw apiErrors.invalidInput('sourceDocumentId must reference an active owner CV');
+    const created: FactRow[] = [];
+    const factTypes: string[] = [];
+    for (const candidate of candidates) {
+      const fact = await client.query<{ id: string }>(
+        `INSERT INTO profile_facts (owner_id, type, verification_status)
+         VALUES ($1, $2, 'unverified') RETURNING id`,
+        [ownerId, candidate.type],
+      );
+      const factId = fact.rows[0]!.id;
+      const version = await client.query<{ id: string }>(
+        `INSERT INTO profile_fact_versions
+           (owner_id, fact_id, version_no, value, source_document_id, verified_at)
+         VALUES ($1, $2, 1, $3::jsonb, $4, NULL) RETURNING id`,
+        [ownerId, factId, JSON.stringify(candidate.value), sourceDocumentId],
+      );
+      await client.query(
+        `UPDATE profile_facts SET current_version_id = $2, updated_at = now() WHERE id = $1`,
+        [factId, version.rows[0]!.id],
+      );
+      created.push(await getFactInTransaction(client, ownerId, factId));
+      factTypes.push(candidate.type);
+    }
+    await client.query(
+      'UPDATE candidate_profiles SET version = version + $2, updated_at = now() WHERE owner_id = $1',
+      [ownerId, candidates.length],
+    );
+    await recordAudit(client, {
+      ownerId,
+      actorType: 'owner',
+      action: 'profile.facts_extracted_imported',
+      entityType: 'document',
+      entityId: sourceDocumentId,
+      result: 'success',
+      requestId: requestId ?? null,
+      details: { candidateCount: candidates.length, types: factTypes, verificationStatus: 'unverified' },
+    });
+    return created;
+  });
+}
+
 export interface UpdateFactInput {
   type?: FactType;
   value?: unknown;

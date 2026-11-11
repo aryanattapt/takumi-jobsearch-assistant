@@ -262,7 +262,7 @@ export async function runProviderTest(
 
 export async function completeStructuredJson(
   ownerId: string,
-  messages: { system: string; user: string },
+  messages: { system: string; user: string; maxOutputTokens?: number },
   fetchImpl: typeof fetch = fetch,
 ): Promise<ProviderCompletion> {
   const row = await queryOne<AiProviderRow>(
@@ -291,8 +291,12 @@ async function requestProviderJson(input: {
   providerType: AiProviderType;
   system: string;
   user: string;
+  maxOutputTokens?: number;
   fetchImpl: typeof fetch;
 }): Promise<ProviderCompletion> {
+  const maxOutputTokens = Number.isInteger(input.maxOutputTokens)
+    ? Math.min(Math.max(input.maxOutputTokens!, 1), 4096)
+    : 1400;
   const baseUrl = input.baseUrl.endsWith('/') ? input.baseUrl : `${input.baseUrl}/`;
   const url = input.providerType === 'gemini'
     ? new URL(`models/${encodeURIComponent(input.model)}:generateContent`, baseUrl)
@@ -310,7 +314,7 @@ async function requestProviderJson(input: {
     };
     requestBody = {
       model: input.model,
-      max_tokens: 1400,
+      max_tokens: maxOutputTokens,
       temperature: 0,
       system: `${input.system}\n\nReturn exactly one valid JSON object with no markdown fences.`,
       messages: [{ role: 'user', content: input.user }],
@@ -324,7 +328,7 @@ async function requestProviderJson(input: {
     requestBody = {
       systemInstruction: { parts: [{ text: input.system }] },
       contents: [{ role: 'user', parts: [{ text: input.user }] }],
-      generationConfig: { temperature: 0, maxOutputTokens: 1400, responseMimeType: 'application/json' },
+      generationConfig: { temperature: 0, maxOutputTokens, responseMimeType: 'application/json' },
     };
   } else {
     headers = {
@@ -335,7 +339,7 @@ async function requestProviderJson(input: {
     requestBody = {
       model: input.model,
       temperature: 0,
-      max_tokens: 1400,
+      max_tokens: maxOutputTokens,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: input.system },
