@@ -127,6 +127,7 @@ interface CompanyResearchResult {
   summary: string;
   status: string;
   checkedAt: string | null;
+  sources?: Array<{ ref: string; title: string; entityName?: string; url: string; accessedAt: string; excerpt: string }>;
   claims: Array<{ category: string; statement: string; confidence: string; evidence: string; sourceRefs: string[] }>;
   openQuestions: string[];
 }
@@ -1441,13 +1442,13 @@ export default function JobSearch(props: JobSearchProps) {
                   }}>
                     <summary>Riset perusahaan</summary>
                     <p className="muted" style={{ fontSize: '0.85rem' }}>
-                      Masukkan kutipan sumber yang sudah Anda temukan. Aplikasi tidak membuka URL; kutipan dan konteks lowongan dikirim ke provider setelah konfirmasi.
+                      Masukkan kutipan yang sudah Anda temukan dan isi entityName persis seperti nama perusahaan pada sumber. Aplikasi tidak membuka URL, jadi pencocokan entitas ini adalah label dari Anda, bukan verifikasi independen.
                     </p>
                     <label htmlFor={`research-sources-${job.id}`}>Sumber (JSON)</label>
                     <textarea
                       id={`research-sources-${job.id}`}
                       rows={5}
-                      value={researchInput[job.id] ?? '[{"ref":"s1","title":"Profil perusahaan","url":"https://example.com","accessedAt":"2026-11-11","excerpt":"Kutipan sumber yang relevan"}]'}
+                      value={researchInput[job.id] ?? '[{"ref":"s1","title":"Profil perusahaan","entityName":"Nama perusahaan persis seperti di sumber","url":"https://example.com","accessedAt":"2026-11-11","excerpt":"Kutipan sumber yang relevan"}]'}
                       onChange={(event) => setResearchInput((current) => ({ ...current, [job.id]: event.target.value }))}
                     />
                     <button type="button" className="secondary" disabled={busy || !props.aiProviderReady} onClick={() => void researchCompany(job)}>
@@ -1457,6 +1458,11 @@ export default function JobSearch(props: JobSearchProps) {
                       <article className="card" key={research.id} style={{ marginTop: 10 }}>
                         <strong>{research.status === 'complete' ? 'Ada dukungan sumber' : 'Bukti belum cukup'} · {research.checkedAt ? new Date(research.checkedAt).toLocaleString('id-ID') : ''}</strong>
                         <p>{research.summary}</p>
+                        {research.sources?.map((source) => (
+                          <p className="muted" key={`${research.id}-${source.ref}`} style={{ fontSize: '0.8rem' }}>
+                            {source.ref} · entitas dilabeli: {source.entityName ?? 'belum dicantumkan'} · diakses {source.accessedAt}
+                          </p>
+                        ))}
                         {research.claims.map((claim, index) => (
                           <p key={`${research.id}-${index}`}>
                             <strong>{claim.category} · {claim.confidence}:</strong> {claim.statement}

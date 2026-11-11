@@ -4,6 +4,7 @@ import { enqueueTask } from '@/lib/queue/tasks';
 import { isValidTimeZone } from '@/lib/profile/service';
 import { query, withTransaction } from '@/lib/db/pool';
 import { apiErrors } from '@/lib/http/errors';
+import { DEFAULT_NOTIFICATION_TEMPLATE, validateNotificationTemplate } from '@/lib/schedule/notification';
 import {
   isWithinLateTolerance,
   resolveLocalSlot,
@@ -21,6 +22,7 @@ export interface ScheduleRow {
   enabled: boolean;
   version: number;
   notify_in_app: boolean;
+  notification_template: string;
   created_at: Date;
   updated_at: Date;
   saved_search_name: string;
@@ -36,6 +38,7 @@ export interface ScheduleInput {
   rule: ScheduleRule;
   enabled: boolean;
   notifyInApp: boolean;
+  notificationTemplate?: string;
 }
 
 export interface NotificationRow {
@@ -46,11 +49,20 @@ export interface NotificationRow {
   read_at: Date | null;
 }
 
-function validateSchedule(input: ScheduleInput): ScheduleInput {
+function validateSchedule(input: ScheduleInput): ScheduleInput & { notificationTemplate: string } {
   if (!isValidTimeZone(input.timezone)) throw apiErrors.invalidInput('timezone must be a valid IANA time zone');
   const rule = ScheduleRuleSchema.safeParse({ ...input.rule, lateToleranceMinutes: input.rule.lateToleranceMinutes ?? 15 });
   if (!rule.success) throw apiErrors.validation({ field: 'rule', issues: rule.error.issues });
-  return { ...input, rule: rule.data };
+  let notificationTemplate: string;
+  try {
+    notificationTemplate = validateNotificationTemplate(input.notificationTemplate);
+  } catch (error) {
+    throw apiErrors.validation({
+      field: 'notificationTemplate',
+      message: error instanceof Error ? error.message : 'Invalid notification template',
+    });
+  }
+  return { ...input, rule: rule.data, notificationTemplate };
 }
 
 async function assertSavedSearch(client: PoolClient, ownerId: string, savedSearchId: string): Promise<void> {
@@ -70,7 +82,7 @@ async function ensureInAppChannel(client: PoolClient, ownerId: string): Promise<
 
 const SELECT_SCHEDULES = `
   SELECT s.id, s.owner_id, s.timezone, s.rule, s.search_config_id, s.enabled,
-         s.version, s.notify_in_app, s.created_at, s.updated_at,
+         s.version, s.notify_in_app, s.notification_template, s.created_at, s.updated_at,
          ss.name AS saved_search_name,
          latest.id AS last_run_id, latest.status AS last_run_status,
          latest.created_at AS last_run_created_at,
@@ -97,9 +109,9 @@ export async function createSchedule(ownerId: string, rawInput: ScheduleInput, r
     await assertSavedSearch(client, ownerId, input.savedSearchId);
     if (input.notifyInApp) await ensureInAppChannel(client, ownerId);
     const inserted = await client.query<{ id: string }>(
-      `INSERT INTO schedules (owner_id, timezone, rule, search_config_id, enabled, notify_in_app)
-       VALUES ($1, $2, $3::jsonb, $4, $5, $6) RETURNING id`,
-      [ownerId, input.timezone, JSON.stringify(input.rule), input.savedSearchId, input.enabled, input.notifyInApp],
+      `INSERT INTO schedules (owner_id, timezone, rule, search_config_id, enabled, notify_in_app, notification_template)
+       VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7) RETURNING id`,
+      [ownerId, input.timezone, JSON.stringify(input.rule), input.savedSearchId, input.enabled, input.notifyInApp, input.notificationTemplate],
     );
     const id = inserted.rows[0]!.id;
     await recordAudit(client, {
@@ -128,14 +140,16 @@ export async function updateSchedule(
       rule: input.rule ?? current.rule,
       enabled: input.enabled ?? current.enabled,
       notifyInApp: input.notifyInApp ?? current.notify_in_app,
+      notificationTemplate: input.notificationTemplate ?? current.notification_template ?? DEFAULT_NOTIFICATION_TEMPLATE,
     });
     await assertSavedSearch(client, ownerId, next.savedSearchId);
     if (next.notifyInApp) await ensureInAppChannel(client, ownerId);
     const updated = await client.query(
       `UPDATE schedules SET timezone = $3, rule = $4::jsonb, search_config_id = $5,
-              enabled = $6, notify_in_app = $7, version = version + 1, updated_at = now()
+              enabled = $6, notify_in_app = $7, notification_template = $8,
+              version = version + 1, updated_at = now()
         WHERE id = $1 AND owner_id = $2 RETURNING id`,
-      [scheduleId, ownerId, next.timezone, JSON.stringify(next.rule), next.savedSearchId, next.enabled, next.notifyInApp],
+      [scheduleId, ownerId, next.timezone, JSON.stringify(next.rule), next.savedSearchId, next.enabled, next.notifyInApp, next.notificationTemplate],
     );
     if (updated.rowCount) await recordAudit(client, {
       ownerId, actorType: 'owner', action: 'schedule.updated', entityType: 'schedule', entityId: scheduleId,

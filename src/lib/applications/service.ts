@@ -363,6 +363,8 @@ export interface ManualSubmissionInput {
   listingId: string;
   submittedAt: Date;
   confirmationRef?: string | null;
+  targetIdentity?: string | null;
+  confirmTargetIdentity?: boolean;
   documentVersionsKnown: boolean;
   documentVersionIds: string[];
   expectedVersion?: number;
@@ -476,7 +478,23 @@ export async function recordManualSubmission(
 
     // Cross-listing / cross-run lock. Unknown outcomes must be reconciled, not
     // overwritten by a manual report.
-    const targetKey = `job:${application.job_id}`;
+    const suppliedTargetIdentity = input.targetIdentity?.trim() ?? '';
+    let targetKey = `job:${application.job_id}`;
+    if (suppliedTargetIdentity) {
+      if (!input.confirmTargetIdentity) {
+        throw apiErrors.validation({
+          field: 'confirmTargetIdentity',
+          message: 'Confirm the canonical target identity before using it to block submissions across listings',
+        });
+      }
+      if (!/^[a-z0-9][a-z0-9._:/-]{1,119}$/iu.test(suppliedTargetIdentity)) {
+        throw apiErrors.validation({
+          field: 'targetIdentity',
+          message: 'Use a stable 2 to 120 character canonical ID with letters, numbers, dots, underscores, colons, slashes, or hyphens',
+        });
+      }
+      targetKey = `owner-target:${suppliedTargetIdentity.toLocaleLowerCase('en-US')}`;
+    }
     const conflicts = await client.query<{ id: string; state: string }>(
       `SELECT id, state FROM application_attempts
         WHERE owner_id = $1 AND target_key = $2
@@ -502,12 +520,17 @@ export async function recordManualSubmission(
       );
     }
 
-    const attempt = await client.query<ApplicationAttemptRow>(
+    const insertedAttempt = await client.query<ApplicationAttemptRow>(
       `INSERT INTO application_attempts
          (owner_id, application_id, listing_id, target_key, mode, state,
           reported_submitted_at, confirmation_source, confirmation_ref, document_version_ids,
           finished_at)
        VALUES ($1, $2, $3, $4, 'manual', 'submitted_confirmed', $5, 'manual', $6, $7, now())
+       ON CONFLICT (owner_id, target_key)
+         WHERE target_key IS NOT NULL
+           AND mode IN ('review_before_submit', 'manual')
+           AND state IN ('reserved', 'running', 'submitting', 'submit_unknown', 'submitted_confirmed')
+       DO NOTHING
        RETURNING *`,
       [
         ownerId,
@@ -519,6 +542,31 @@ export async function recordManualSubmission(
         documentVersionIds,
       ],
     );
+    const attempt = insertedAttempt.rows[0];
+    if (!attempt) {
+      const conflicting = await client.query<{ id: string; state: string }>(
+        `SELECT id, state FROM application_attempts
+          WHERE owner_id = $1 AND target_key = $2
+            AND state = ANY($3::text[])
+          ORDER BY created_at DESC LIMIT 1`,
+        [ownerId, targetKey, BLOCKING_ATTEMPT_STATES],
+      );
+      const conflict = conflicting.rows[0];
+      if (conflict?.state === 'submit_unknown') {
+        throw new ApiError(
+          409,
+          'SUBMIT_UNKNOWN_REQUIRES_RECONCILIATION',
+          'A previous attempt has an unknown outcome; reconcile it first',
+          { attemptId: conflict.id },
+        );
+      }
+      throw new ApiError(
+        409,
+        'TARGET_ALREADY_RECORDED',
+        'This target already has an active or confirmed attempt',
+        conflict ? { attemptId: conflict.id, state: conflict.state } : {},
+      );
+    }
 
     const updated = await client.query<ApplicationRow>(
       `UPDATE applications
@@ -535,7 +583,7 @@ export async function recordManualSubmission(
           actor_type, actor_id, reason_code)
        VALUES ($1, $2, 'manual_submission.recorded', $3, 'submitted_confirmed',
                'owner', $4, 'owner_reported')`,
-      [applicationId, attempt.rows[0]!.id, application.submission_status, ownerId],
+      [applicationId, attempt.id, application.submission_status, ownerId],
     );
     await recordAudit(client, {
       ownerId,
@@ -546,8 +594,9 @@ export async function recordManualSubmission(
       result: 'success',
       requestId: requestId ?? null,
       details: {
-        attemptId: attempt.rows[0]!.id,
+        attemptId: attempt.id,
         listingId: input.listingId,
+        ownerConfirmedCanonicalTarget: Boolean(suppliedTargetIdentity),
         confirmationReferenceRecorded: Boolean(input.confirmationRef?.trim()),
         documentVersionsKnown: input.documentVersionsKnown,
         documentVersionCount: documentVersionIds.length,
@@ -556,7 +605,7 @@ export async function recordManualSubmission(
 
     return {
       application: updated.rows[0]!,
-      attempt: attempt.rows[0]!,
+      attempt,
     };
   });
 }

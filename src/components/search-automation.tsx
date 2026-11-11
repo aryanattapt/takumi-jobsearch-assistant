@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { DEFAULT_NOTIFICATION_TEMPLATE } from '@/lib/schedule/notification';
 
 interface SavedSearchOption {
   id: string;
@@ -16,6 +17,7 @@ interface ScheduleItem {
   enabled: boolean;
   version: number;
   notifyInApp: boolean;
+  notificationTemplate: string;
   lastRunStatus: string | null;
   lastRunCreatedAt: string | null;
   lastRunListingCount: number | null;
@@ -53,6 +55,7 @@ export default function SearchAutomation(props: {
   const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [times, setTimes] = useState('09:00');
   const [notifyInApp, setNotifyInApp] = useState(true);
+  const [notificationTemplate, setNotificationTemplate] = useState(DEFAULT_NOTIFICATION_TEMPLATE);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +103,7 @@ export default function SearchAutomation(props: {
         body: JSON.stringify({
           savedSearchId, timezone, rule: { daysOfWeek: days, times: parsedTimes, lateToleranceMinutes: 15 },
           enabled: editing?.enabled ?? true, notifyInApp,
+          notificationTemplate,
           ...(editing ? { expectedVersion: editing.version } : {}),
         }),
       });
@@ -115,6 +119,7 @@ export default function SearchAutomation(props: {
     setDays(schedule.rule.daysOfWeek);
     setTimes(schedule.rule.times.join(', '));
     setNotifyInApp(schedule.notifyInApp);
+    setNotificationTemplate(schedule.notificationTemplate || DEFAULT_NOTIFICATION_TEMPLATE);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -185,6 +190,17 @@ export default function SearchAutomation(props: {
             <input type="checkbox" checked={notifyInApp} onChange={(event) => setNotifyInApp(event.target.checked)} />
             Beri notifikasi untuk lowongan baru atau revisi
           </label>
+          <label htmlFor="automation-notification-template">Format isi notifikasi</label>
+          <textarea
+            id="automation-notification-template"
+            rows={2}
+            maxLength={300}
+            value={notificationTemplate}
+            onChange={(event) => setNotificationTemplate(event.target.value)}
+          />
+          <p className="muted" style={{ fontSize: '0.8rem' }}>
+            Variabel: {'{{type}}'}, {'{{title}}'}, {'{{company}}'}, {'{{location}}'}, {'{{source}}'}, {'{{searchName}}'}, {'{{url}}'}. Penerima adalah pemilik workspace di inbox dashboard.
+          </p>
           <div className="row">
             <button type="submit" disabled={busy}>{editingScheduleId ? 'Simpan perubahan' : 'Buat jadwal'}</button>
             {editingScheduleId ? <button type="button" className="secondary" disabled={busy} onClick={() => setEditingScheduleId(null)}>Batal edit</button> : null}
@@ -212,10 +228,11 @@ export default function SearchAutomation(props: {
           const title = typeof item.payload.title === 'string' ? item.payload.title : 'Lowongan diperbarui';
           const company = typeof item.payload.company === 'string' ? item.payload.company : '';
           const searchName = typeof item.payload.savedSearchName === 'string' ? item.payload.savedSearchName : 'saved search';
+          const messageText = typeof item.payload.message === 'string' ? item.payload.message : null;
           const url = typeof item.payload.url === 'string' && /^https?:\/\//u.test(item.payload.url) ? item.payload.url : null;
           return <li key={item.id}>
             <div style={{ flex: 1, minWidth: 220 }}>
-              <strong>{String(item.payload.type ?? 'update').replaceAll('_', ' ')}: {title}</strong>
+              <strong>{messageText ?? `${String(item.payload.type ?? 'update').replaceAll('_', ' ')}: ${title}`}</strong>
               <div>{company} · {searchName}</div>
               <span className="muted">{new Date(item.createdAt).toLocaleString('id-ID')}{item.readAt ? ' · dibaca' : ' · baru'}</span>
               {url ? <div><a href={url} target="_blank" rel="noopener noreferrer">Buka listing</a></div> : null}

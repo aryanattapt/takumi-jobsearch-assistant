@@ -1,4 +1,5 @@
 import { getPool, withTransaction } from '@/lib/db/pool';
+import { renderNotificationTemplate } from '@/lib/schedule/notification';
 
 interface SearchSnapshot {
   scheduleId: string;
@@ -43,8 +44,9 @@ export async function runScheduledSearch(ownerId: string, runId: string): Promis
       query_snapshot: unknown;
       schedule_id: string | null;
       notify_in_app: boolean | null;
+      notification_template: string | null;
     }>(
-      `SELECT r.id, r.status, r.query_snapshot, o.schedule_id, s.notify_in_app
+      `SELECT r.id, r.status, r.query_snapshot, o.schedule_id, s.notify_in_app, s.notification_template
          FROM search_runs r
          LEFT JOIN schedule_occurrences o ON o.id = r.schedule_occurrence_id
          LEFT JOIN schedules s ON s.id = o.schedule_id AND s.owner_id = r.owner_id
@@ -152,6 +154,11 @@ export async function runScheduledSearch(ownerId: string, runId: string): Promis
               postingRevisionId: listing.posting_revision_id, title: listing.title, company: listing.company,
               location: listing.location, url: listing.canonical_url, source: listing.source_code,
               savedSearchId: snapshot.savedSearchId, savedSearchName: snapshot.savedSearchName,
+              message: renderNotificationTemplate(run.notification_template ?? '{{type}}: {{title}} — {{company}}', {
+                type: eventType === 'new_listing' ? 'Lowongan baru' : 'Lowongan diperbarui',
+                title: listing.title, company: listing.company, location: listing.location ?? '',
+                source: listing.source_code, searchName: snapshot.savedSearchName, url: listing.canonical_url ?? '',
+              }),
             })],
           );
         }

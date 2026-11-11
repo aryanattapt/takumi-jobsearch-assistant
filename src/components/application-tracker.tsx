@@ -207,6 +207,8 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
   const [selectedSubmissionVersions, setSelectedSubmissionVersions] = useState<Record<string, string[]>>({});
   const [manualRecordFor, setManualRecordFor] = useState<string | null>(null);
   const [manualConfirmationRefs, setManualConfirmationRefs] = useState<Record<string, string>>({});
+  const [manualTargetIdentities, setManualTargetIdentities] = useState<Record<string, string>>({});
+  const [manualTargetIdentityConfirmed, setManualTargetIdentityConfirmed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setApplications(props.applications);
@@ -271,6 +273,11 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
       setError('Lowongan ini tidak punya listing aktif untuk dicatat.');
       return;
     }
+    const targetIdentity = manualTargetIdentities[application.id]?.trim() ?? '';
+    if (targetIdentity && !manualTargetIdentityConfirmed[application.id]) {
+      setError('Centang konfirmasi bahwa ID kanonis ini memang requisition yang sama sebelum dipakai lintas listing.');
+      return;
+    }
     await run(async () => {
       await callApi(`/api/v1/applications/${application.id}/manual-submissions`, {
         method: 'POST',
@@ -281,6 +288,7 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
           listingId: application.job.listingId,
           submittedAt: new Date().toISOString(),
           confirmationRef: manualConfirmationRefs[application.id]?.trim() || null,
+          ...(targetIdentity ? { targetIdentity, confirmTargetIdentity: true } : {}),
           documentVersionsKnown: (selectedSubmissionVersions[application.id]?.length ?? 0) > 0,
           documentVersionIds: selectedSubmissionVersions[application.id] ?? [],
           expectedVersion: application.version,
@@ -289,6 +297,8 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
       await fetchApplications();
       setManualRecordFor(null);
       setManualConfirmationRefs((current) => ({ ...current, [application.id]: '' }));
+      setManualTargetIdentities((current) => ({ ...current, [application.id]: '' }));
+      setManualTargetIdentityConfirmed((current) => ({ ...current, [application.id]: false }));
       setMessage('Lamaran dicatat sebagai laporan terkirim manual. Referensi bukti tidak diverifikasi otomatis.');
     });
   }
@@ -1047,6 +1057,34 @@ export default function ApplicationTracker(props: ApplicationTrackerProps) {
                     }))}
                     placeholder="Label singkat atau referensi email; jangan masukkan password/OTP"
                   />
+                  <label htmlFor={`target-identity-${application.id}`}>
+                    ID target kanonis lintas listing (opsional)
+                  </label>
+                  <input
+                    id={`target-identity-${application.id}`}
+                    type="text"
+                    maxLength={120}
+                    value={manualTargetIdentities[application.id] ?? ''}
+                    onChange={(event) => setManualTargetIdentities((current) => ({
+                      ...current,
+                      [application.id]: event.target.value,
+                    }))}
+                    placeholder="Contoh unik: mayora:REQ-123"
+                  />
+                  <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={manualTargetIdentityConfirmed[application.id] ?? false}
+                      onChange={(event) => setManualTargetIdentityConfirmed((current) => ({
+                        ...current,
+                        [application.id]: event.target.checked,
+                      }))}
+                    />
+                    Saya sudah memastikan ID ini menunjuk requisition yang sama pada listing lain.
+                  </label>
+                  <p className="muted" style={{ fontSize: '0.8rem' }}>
+                    ID yang sama akan memblokir pencatatan pengiriman ulang lintas listing. Ini konfirmasi manual pemilik, bukan verifikasi portal.
+                  </p>
                   <div className="row" style={{ marginTop: 10 }}>
                     <button
                       type="button"

@@ -15,6 +15,7 @@ const CreateSchema = z.object({
   rule: ScheduleRuleSchema,
   enabled: z.boolean().default(true),
   notifyInApp: z.boolean().default(true),
+  notificationTemplate: z.string().max(300).optional(),
 }).strict();
 
 export const GET = apiRoute(async (request) => {
@@ -36,6 +37,7 @@ function scheduleDto(row: Awaited<ReturnType<typeof listSchedules>>[number]) {
     id: row.id, savedSearchId: row.search_config_id, savedSearchName: row.saved_search_name,
     timezone: row.timezone, rule: row.rule, enabled: row.enabled, version: row.version,
     notifyInApp: row.notify_in_app, lastRunId: row.last_run_id, lastRunStatus: row.last_run_status,
+    notificationTemplate: row.notification_template,
     lastRunCreatedAt: row.last_run_created_at?.toISOString() ?? null,
     lastRunListingCount: row.last_run_listing_count, createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),

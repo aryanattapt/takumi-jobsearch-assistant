@@ -68,11 +68,11 @@ Requirement traceability (Phase 2):
 
 | Epic | Status | What exists |
 |---|---|---|
-| E09 Tracker | Done for P0 manual path | One draft application per job, owner notes with `current_version`, manual submission records (`mode=manual`, `state=submitted_confirmed`, `confirmation_source=manual`), target lock per job, separation from recruitment stage, timeline events, no worker task/quota consumption, deterministic conflict when a `submit_unknown` attempt exists, versioned cancellation, and reopen from `cancelled` to `draft` or `not_submitted` to `ready_for_review`. Reopen blocks when a matching target is unknown or already confirmed. Active-attempt cancellation checks intent and releases reserved quota. Submission records may attach only reviewed, latest document versions belonging to that application. |
+| E09 Tracker | Done for P0 manual path | One draft application per job, owner notes with `current_version`, manual submission records (`mode=manual`, `state=submitted_confirmed`, `confirmation_source=manual`), target lock per job, and an optional explicitly owner-confirmed canonical key to lock a manually reported requisition across listings. That key is owner-reported, not portal-verified. Also separates recruitment stage, writes timeline events, uses no worker task/quota for manual reports, rejects a second report when a matching `submit_unknown` exists, supports versioned cancellation/reopen, and attaches only reviewed latest document versions. |
 | E08 Documents/Q&A | Done for P0 local path | CV/cover drafts use only explicitly selected verified facts, retain source fact-version IDs, support immutable edits and owner review, and generate private PDFs with text-layer, structure, page-count and layout checks. Application-scoped screening answers have encrypted content, immutable history and provenance; sensitive/unknown questions require owner input. No portal autofill. |
 | E07 AI/evaluation | Done for P0 with owner review outstanding | Local evidence-based scoring remains deterministic and provisional; technical skill aliases are explicit and scoring evidence cites posting text. Dashboard-configured providers support fixed connection tests and separately consented job review using selected verified facts plus the saved posting. API keys are encrypted, write-only, endpoint origins are allowlisted, output is schema/evidence checked, and there is no fallback or submit authority. |
 | E08 Interview preparation | Partial P1 | Per-application interview packs use selected verified facts and the saved posting after explicit provider-transfer consent. Fact IDs and exact posting excerpts are validated; unsupported answers remain for owner input. Stored content is encrypted and included in privacy exports. |
-| E07 Company research | Partial P1 | Owner-provided source excerpts can be summarized after explicit provider-transfer consent. URLs are not fetched; supported claims must cite supplied sources and exact excerpts. |
+| E07 Company research | Partial P1 | Owner-provided excerpts can be summarized after explicit provider-transfer consent. Sources can include an exact company-name label; claims without a matching label are downgraded to uncertain. Direct-employment/outsourcing evidence conflicts also downgrades related claims. URLs are not fetched and labels are owner-attested, not independently verified. |
 
 Verification (Phase 3 update, 2026-11-10):
 
@@ -188,7 +188,9 @@ Requirement traceability (Phase 4 implemented slices):
 | UAT-45–46 (partial) | Integration tests cover available/full quota at local midnight and same-day limit reductions before intent. Broader clock, timezone-change, and live worker scenarios remain untested. |
 | UAT-50 (partial) | Cancellation and intent serialize on the owner control. Invalid approval or dispatch gate before intent terminates as `not_submitted` and releases quota. Regression coverage exercises expired and revoked approvals before reservation and before intent, including audit and quota accounting; portal outcomes after intent remain for owner UAT. |
 | PR-15 / UAT-54 (partial) | Preflight and dry-run create owner audit events with IDs/counts and no answer/CV payloads. |
-| UAT-19–22, UAT-28–30, UAT-42–44, UAT-48–49 | Not implemented: live dispatch lifecycle, portal race-stop and automated portal evidence, cross-listing target identity, and live restore-loss recovery. |
+| UAT-19–22, UAT-28–30, UAT-42–44 | Not implemented: live dispatch lifecycle, portal race-stop, automated portal evidence, and live restore-loss recovery. |
+| UAT-48 (partial) | Matching source entity labels and direct-employment/outsourcing contradiction guards exist. URLs and source ownership are not independently checked; regression coverage and owner UAT remain open. |
+| UAT-49 (manual only) | Owner can supply the same canonical target key while recording manual submissions from separate listings; the existing unique target lock blocks the duplicate. The key is an owner assertion, not a portal-verified requisition identity. |
 
 ## Phase 5 — Perluasan P1 (provider, schedule, and notification slices)
 
@@ -196,7 +198,7 @@ Requirement traceability (Phase 4 implemented slices):
 |---|---|---|
 | E06 Saved searches | Done for local catalog | Owner-scoped saved-search create/read/update/delete API and dashboard controls to save, load, update, and delete query/status/source/sort filters. Changes are versioned and audited; searches can be scheduled against the local catalog. No source adapter is invoked by a scheduled run. |
 | E12 AI providers | Partial | Dashboard-configured OpenAI-compatible, native Gemini `generateContent`, and Anthropic Messages adapters. All use a fixed JSON connection test, exact HTTPS base-URL allowlisting, encrypted write-only API keys in provider-specific headers, bounded responses/timeouts, usage-token reporting where available, and no automatic provider fallback. Switching provider/model invalidates the previous passing connection test. |
-| Schedule and in-app notifications | Partial P1 | Owner-scoped schedule CRUD with optimistic versions, IANA timezone and DST slot resolution; worker materializes due runs, searches only the owner’s local indexed catalog, and stores run/listing history. New or revised listings after a baseline run appear in the dashboard inbox. No email, Telegram, or external source fetching is enabled. |
+| Schedule and in-app notifications | Partial P1 | Owner-scoped schedule CRUD with optimistic versions, IANA timezone and DST slot resolution; worker searches only the local catalog. The owner can configure the in-app notification message template per schedule. The sole workspace owner is the fixed dashboard recipient. No email, Telegram, or external source fetching is enabled. |
 
 Verification for this slice:
 
@@ -231,7 +233,7 @@ signed off by the owner.
 
 ## Not started yet
 
-- Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, automated portal evidence validation, cross-listing target identity, pilot backup/portal restore verification, and owner live UAT. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
+- Phase 4 remaining: any authorized JobStreet interface (none qualified), live browser-attempt creation/worker dispatch, automated portal evidence validation, portal-verified cross-listing identity, pilot backup/portal restore verification, and owner live UAT. Manual owner-confirmed target keys now cover the non-automated tracker path. JobStreet manual handoff is available; quota and cancellation services remain internal gated foundations.
 - Phase 5 remaining: qualified external source adapters, notifications outside the dashboard, and additional schedule/source UAT.
 - Phase 6: Gmail/Notion and learning-plan integrations remain deferred pending owner decisions and privacy review.
 - Live provider credentials, production deployment, and external ATS/client compatibility checks remain open.
@@ -255,7 +257,9 @@ signed off by the owner.
   fetch external sources. A first run establishes the notification baseline.
 - Profile facts accept free-form JSON values; type-specific schemas can be added
   when extraction templates are defined.
-- Manual submission uses `target_key = job:<id>`; cross-listing verification and
+- Manual submission defaults to `target_key = job:<id>`. Owners may use a
+  `owner-target:<id>` key after confirming it identifies the same requisition;
+  this is not independent portal verification. Automated target discovery and
   reconciliation of `submit_unknown` remain Phase 4 work.
 - Local Portal Assist uses `fixture:job:<id>` only for synthetic review records;
   never use it as a verified requisition key in a live adapter. Material freshness
@@ -276,6 +280,11 @@ signed off by the owner.
   and UAT-51 have not been run for this update.
 - Cross-owner tests use a directly inserted second user; production provisioning
   still enforces single owner.
+- Company-source entity matching compares the company label entered by the owner
+  with the saved company name and uses narrow keyword checks for employment
+  conflicts. It does not verify page ownership or detect every form of
+  contradiction. Notification recipients remain the sole owner’s dashboard;
+  external channels and arbitrary recipient lists are not configured.
 
 ## Follow-up implementation (2026-11-11)
 
@@ -290,6 +299,17 @@ signed off by the owner.
   work-history ranges before sending data to the AI provider. AI job review and
   interview preparation reject numeric/duration claims not present in selected
   verified facts. These checks do not replace owner review.
-- `npm run typecheck`, `npm run lint`, and `npm run build` are local
-  implementation checks for this update. Automated tests were not run;
-  UAT-31/UAT-51 regression coverage and owner sign-off remain open.
+- Schedules now save a validated per-schedule notification template with a
+  small allowlist of fields. Search runs render the message into the in-app
+  inbox; delivery remains dashboard-only for the single owner.
+- Company research can label each pasted excerpt with an exact entity name.
+  Claims without a matching company label and employment claims with opposing
+  direct/outsourcing evidence remain uncertain. No URL fetching or independent
+  source verification was added.
+- Manual submission can optionally take an explicitly confirmed canonical
+  target key. A database unique lock blocks another manual report using that
+  key across different listings, including simultaneous requests; the API
+  reports the collision as a conflict.
+- `npm run typecheck`, `npm run lint`, and `npm run build` are implementation
+  checks for this follow-up. Automated tests were not run; UAT-31, UAT-48,
+  UAT-49, UAT-51 regression coverage and owner sign-off remain open.

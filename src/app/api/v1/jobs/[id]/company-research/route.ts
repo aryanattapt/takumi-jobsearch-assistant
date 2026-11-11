@@ -12,6 +12,7 @@ export const dynamic = 'force-dynamic';
 const SourceSchema = z.object({
   ref: z.string().trim().min(1).max(40).regex(/^[a-zA-Z0-9_-]+$/u),
   title: z.string().trim().min(1).max(200),
+  entityName: z.string().trim().min(1).max(200).optional(),
   url: z.string().trim().url().max(1000),
   accessedAt: z.string().trim().min(1).max(40),
   excerpt: z.string().trim().min(1).max(4000),

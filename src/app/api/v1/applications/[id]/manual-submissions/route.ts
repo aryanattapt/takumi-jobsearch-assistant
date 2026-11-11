@@ -27,9 +27,19 @@ const ManualSubmissionSchema = z.object({
       message: 'submittedAt must be an ISO 8601 timestamp',
     }),
   confirmationRef: z.string().trim().max(500).optional(),
+  targetIdentity: z.string().trim().min(2).max(120).regex(/^[a-z0-9][a-z0-9._:/-]*$/iu).optional(),
+  confirmTargetIdentity: z.literal(true).optional(),
   documentVersionsKnown: z.boolean(),
   documentVersionIds: z.array(z.string().uuid()).max(50).default([]),
   expectedVersion: z.number().int().positive().optional(),
+}).superRefine((value, context) => {
+  if (value.targetIdentity && !value.confirmTargetIdentity) {
+    context.addIssue({
+      code: 'custom',
+      path: ['confirmTargetIdentity'],
+      message: 'Confirm that this canonical ID identifies the same requisition across listings',
+    });
+  }
 });
 
 export const POST = apiRouteCtx<{ params: Promise<{ id: string }> }>(
@@ -58,6 +68,8 @@ export const POST = apiRouteCtx<{ params: Promise<{ id: string }> }>(
         listingId: body.listingId,
         submittedAt: submittedAt.toISOString(),
         confirmationRef: body.confirmationRef ?? null,
+        targetIdentity: body.targetIdentity ?? null,
+        confirmTargetIdentity: body.confirmTargetIdentity ?? false,
         documentVersionsKnown: body.documentVersionsKnown,
         documentVersionIds: body.documentVersionIds,
         expectedVersion: body.expectedVersion ?? null,
@@ -70,6 +82,8 @@ export const POST = apiRouteCtx<{ params: Promise<{ id: string }> }>(
             listingId: body.listingId,
             submittedAt,
             confirmationRef: body.confirmationRef,
+            targetIdentity: body.targetIdentity,
+            confirmTargetIdentity: body.confirmTargetIdentity,
             documentVersionsKnown: body.documentVersionsKnown,
             documentVersionIds: body.documentVersionIds,
             expectedVersion: body.expectedVersion,

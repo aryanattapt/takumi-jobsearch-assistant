@@ -9,10 +9,32 @@ export const RESEARCH_PROMPT_VERSION = 'company-research-v1';
 const SourceSchema = z.object({
   ref: z.string().trim().min(1).max(40).regex(/^[a-zA-Z0-9_-]+$/u),
   title: z.string().trim().min(1).max(200),
+  entityName: z.string().trim().min(1).max(200).optional(),
   url: z.string().trim().url().max(1000),
   accessedAt: z.string().trim().min(1).max(40),
   excerpt: z.string().trim().min(1).max(4000),
 }).strict();
+
+function normalizeEntityName(value: string): string {
+  return value.normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase('id-ID')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/gu, ' ');
+}
+
+type EmploymentPosition = 'outsourced' | 'direct';
+
+function employmentPosition(text: string): EmploymentPosition | null {
+  const value = text.toLocaleLowerCase('id-ID');
+  if (/(?:\bnot\b|\bnever\b|\bno\b|\bbukan\b|\btidak\b|\bnon)[\s\w-]{0,24}(?:outsourc\w*|alih daya)/iu.test(value) ||
+      /(?:direct(?:ly)? employed|direct employee|karyawan langsung|pegawai langsung|pegawai tetap perusahaan)/iu.test(value)) {
+    return 'direct';
+  }
+  if (/(?:outsourc\w*|alih daya|tenaga kerja vendor|agency worker)/iu.test(value)) return 'outsourced';
+  return null;
+}
+
+function addUniqueQuestion(questions: string[], question: string): void {
+  if (!questions.includes(question)) questions.push(question);
+}
 
 const ResearchSchema = z.object({
   summary: z.string().trim().min(1).max(2000),
@@ -116,15 +138,47 @@ export async function createCompanyResearch(
       throw new ApiError(502, 'AI_OUTPUT_UNGROUNDED', 'Company research cited text that was not in the supplied sources');
     }
   }
-  const summary = result.data.claims.filter((claim) => claim.confidence === 'supported').slice(0, 3).map((claim) => claim.statement).join(' ')
+  const normalizedCompany = normalizeEntityName(context.company);
+  const matchingEntityRefs = new Set(sources.filter((source) =>
+    source.entityName && normalizeEntityName(source.entityName) === normalizedCompany,
+  ).map((source) => source.ref));
+  const positions = new Map<string, EmploymentPosition>();
+  for (const source of sources) {
+    if (!matchingEntityRefs.has(source.ref)) continue;
+    const position = employmentPosition(`${source.title}\n${source.excerpt}`);
+    if (position) positions.set(source.ref, position);
+  }
+  const hasEmploymentConflict = [...positions.values()].includes('outsourced') && [...positions.values()].includes('direct');
+  const openQuestions = [...result.data.openQuestions];
+  if (!matchingEntityRefs.size) {
+    addUniqueQuestion(openQuestions, 'Belum ada sumber yang diberi label entitas dengan nama perusahaan yang sama persis; klaim sumber tetap tidak terverifikasi.');
+  }
+  if (hasEmploymentConflict) {
+    addUniqueQuestion(openQuestions, 'Sumber yang dilabeli untuk perusahaan ini bertentangan soal hubungan kerja langsung atau outsourcing; verifikasi statusnya sebelum mengambil keputusan.');
+  }
+  const relevantEmploymentClaim = (claim: z.infer<typeof ResearchSchema>['claims'][number]): boolean =>
+    claim.category === 'recruitment' || claim.category === 'workplace' || claim.category === 'risk' ||
+    /outsourc\w*|alih daya|direct(?:ly)? employ|karyawan|pegawai/iu.test(`${claim.statement} ${claim.evidence}`);
+  const groundedClaims = result.data.claims.map((claim) => {
+    const hasMatchedEntityEvidence = claim.sourceRefs.some((ref) => {
+      const source = sourceMap.get(ref);
+      return matchingEntityRefs.has(ref) && Boolean(source?.excerpt.includes(claim.evidence));
+    });
+    const citedPositions = new Set(claim.sourceRefs.flatMap((ref) => positions.has(ref) ? [positions.get(ref)!] : []));
+    const citesBothSides = citedPositions.has('outsourced') && citedPositions.has('direct');
+    const mustRemainUnknown = !hasMatchedEntityEvidence ||
+      (hasEmploymentConflict && relevantEmploymentClaim(claim)) || citesBothSides;
+    return { ...claim, confidence: mustRemainUnknown ? 'uncertain' as const : claim.confidence };
+  });
+  const summary = groundedClaims.filter((claim) => claim.confidence === 'supported').slice(0, 3).map((claim) => claim.statement).join(' ')
     || 'Sumber yang diberikan belum cukup untuk mendukung ringkasan perusahaan.';
-  const claimsJson: CompanyResearchRow['claims_json'] = { sources, claims: result.data.claims, openQuestions: result.data.openQuestions };
+  const claimsJson: CompanyResearchRow['claims_json'] = { sources, claims: groundedClaims, openQuestions };
   return withTransaction(async (client) => {
     const inserted = await client.query<CompanyResearchRow>(
       `INSERT INTO company_research (owner_id, job_id, summary, claims_json, checked_at, status)
        SELECT $1, $2, $3, $4::jsonb, now(), $5
         WHERE EXISTS (SELECT 1 FROM jobs WHERE id = $2 AND owner_id = $1) RETURNING *`,
-      [ownerId, jobId, summary, JSON.stringify(claimsJson), result.data.claims.some((claim) => claim.confidence === 'supported') ? 'complete' : 'unknown'],
+      [ownerId, jobId, summary, JSON.stringify(claimsJson), groundedClaims.some((claim) => claim.confidence === 'supported') ? 'complete' : 'unknown'],
     );
     const row = inserted.rows[0];
     if (!row) throw apiErrors.notFound();

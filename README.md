@@ -46,7 +46,9 @@ snapshots, approvals, and dry-runs) — see
   separate from recruitment stage, record owner-reported manual submissions with
   an idempotency key, optimistic versions, timeline events and no worker/quota
   side effects. JobStreet links open only after an owner click; manual records
-  can include an optional confirmation reference that is not portal-verified.
+  can include an optional confirmation reference and an explicitly owner-confirmed
+  canonical target key to block duplicate reports across listings. The key is an
+  owner assertion, not a portal-verified requisition identity.
 - Encrypted screening answer bank with optimistic versions, verified/unverified/
   retracted states, source-fact links, and deterministic suggestions. Sensitive,
   legal or unknown questions always return `needs_user_input` instead of a guess.
@@ -64,8 +66,12 @@ snapshots, approvals, and dry-runs) — see
   shown as a draft for owner review, unsupported quantitative claims are
   rejected, and it has no application-submit capability.
 - Company research accepts up to eight source excerpts supplied by the owner.
-  URLs are recorded as citations but never fetched; research requires transfer
-  consent and every supported claim is checked against an exact excerpt.
+  The owner can label each excerpt with the exact company entity name; claims
+  without a matching label are downgraded to uncertain, as are employment
+  claims when direct-hire and outsourcing evidence conflicts. URLs are recorded
+  as citations but never fetched, so entity labels and sources are not
+  independently verified. Research requires transfer consent and every claim
+  must cite an exact supplied excerpt.
 - Per-application CV and cover-letter drafts use selected verified facts, retain
   fact-version provenance, support immutable revisions and owner review, and
   produce private PDFs with local text-layer, structure and page-layout checks.
@@ -80,7 +86,8 @@ snapshots, approvals, and dry-runs) — see
   leaves unsupported answer sections for owner input.
 - Saved searches can run on a weekday/time schedule in an IANA timezone. Runs
   search the local catalog only; the in-app inbox reports new or revised
-  listings after the initial baseline run.
+  listings after the initial baseline run. Each schedule can customize its
+  message format; notifications go to the sole owner's dashboard inbox.
 - Local Portal Assist fixture creates version-bound preflight snapshots, checks
   reviewed documents and verified source facts, binds candidate facts by hash,
   supports owner approval/revocation, and records dry-runs as `simulated`. It
