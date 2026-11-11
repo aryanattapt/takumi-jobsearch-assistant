@@ -3,6 +3,7 @@ import { recordAudit } from '@/lib/audit';
 import { completeStructuredJson } from '@/lib/ai/providers';
 import { getPool, query, withTransaction } from '@/lib/db/pool';
 import { ApiError, apiErrors } from '@/lib/http/errors';
+import { unsupportedQuantities } from '@/lib/ai/grounding';
 
 export interface AiJobReview {
   id: string;
@@ -192,6 +193,18 @@ export async function createAiJobReview(
     if (!description.includes(gap.postingEvidence)) {
       throw new ApiError(502, 'AI_OUTPUT_UNGROUNDED', 'AI review cited posting text that was not present in the saved posting');
     }
+  }
+  const unsupported = unsupportedQuantities(
+    [parsed.data.summary, ...parsed.data.strengths.map((strength) => strength.claim)],
+    selected.map((fact) => fact.value),
+  );
+  if (unsupported.length) {
+    throw new ApiError(
+      502,
+      'AI_OUTPUT_UNGROUNDED',
+      'AI review contains a number or duration that is not supported by the selected facts. Regenerate the review or use the manual draft for owner correction.',
+      { unsupportedQuantities: unsupported },
+    );
   }
   const resultJson: AiReviewResult = { status: 'needs_review', ...parsed.data };
 

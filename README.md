@@ -19,7 +19,8 @@ snapshots, approvals, and dry-runs) — see
 - Local-only owner provisioning (CLI, singleton lock; the web app cannot create
   an owner).
 - Login/logout with scrypt password hashes, HttpOnly session cookies, CSRF
-  tokens and Origin checks, DB-backed login throttling.
+  tokens and Origin checks, DB-backed login throttling, and a local operator
+  password-reset command that revokes active sessions.
 - Versioned PostgreSQL schema covering identity, profile/facts, documents, jobs
   and listings, applications/attempts, quota, schedules, privacy and audit.
 - Private document storage: content-based type validation, random object names,
@@ -60,7 +61,8 @@ snapshots, approvals, and dry-runs) — see
 - AI job review is a separate advisory flow: each run requires explicit consent
   and selected verified profile facts; only those facts and the saved posting are
   sent. Output must cite supplied fact versions and exact posting excerpts, is
-  shown as a draft for owner review, and has no application-submit capability.
+  shown as a draft for owner review, unsupported quantitative claims are
+  rejected, and it has no application-submit capability.
 - Company research accepts up to eight source excerpts supplied by the owner.
   URLs are recorded as citations but never fetched; research requires transfer
   consent and every supported claim is checked against an exact excerpt.
@@ -73,8 +75,9 @@ snapshots, approvals, and dry-runs) — see
   auto-filled into a portal.
 - Interview preparation uses the saved posting and selected verified profile
   facts only. It requires consent before provider transfer, checks cited facts
-  and posting excerpts, encrypts saved output, and leaves unsupported answer
-  sections for owner input.
+  and posting excerpts, blocks clear date conflicts in structured work-history
+  facts, rejects unsupported quantitative claims, encrypts saved output, and
+  leaves unsupported answer sections for owner input.
 - Saved searches can run on a weekday/time schedule in an IANA timezone. Runs
   search the local catalog only; the in-app inbox reports new or revised
   listings after the initial baseline run.
@@ -137,6 +140,12 @@ docker compose up -d web worker
 
 Open `http://localhost:3000`. The password prompt is interactive; for automation
 set `AJSA_OWNER_PASSWORD` for the one-off command instead.
+
+To recover the single owner account locally, stop the web app and run
+`npm run reset-owner-password`. Enter the new password at the hidden prompt or
+provide `AJSA_OWNER_PASSWORD` for a one-off operator command. The command
+revokes every active session and records an audit event; it does not expose a
+password-reset endpoint over HTTP.
 
 ## Quick start (local Node, no Docker)
 

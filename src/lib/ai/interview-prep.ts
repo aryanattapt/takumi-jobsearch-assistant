@@ -4,6 +4,7 @@ import { completeStructuredJson } from '@/lib/ai/providers';
 import { decryptSecret, encryptSecret } from '@/lib/crypto/secrets';
 import { getPool, query, withTransaction } from '@/lib/db/pool';
 import { ApiError, apiErrors } from '@/lib/http/errors';
+import { findWorkDateConflicts, unsupportedQuantities } from '@/lib/ai/grounding';
 
 export const INTERVIEW_PREP_PROMPT_VERSION = 'interview-prep-v1';
 
@@ -130,6 +131,24 @@ export async function createInterviewPrep(
     [ownerId, factIds, ['education', 'work_experience', 'skill', 'language']],
   );
   if (facts.length !== factIds.length) throw apiErrors.validation({ field: 'factIds', message: 'Choose only current verified education, experience, skill, or language facts' });
+  const workDateConflicts = findWorkDateConflicts(
+    facts.filter((fact) => fact.type === 'work_experience')
+      .map((fact) => ({ factVersionId: fact.fact_version_id, value: fact.value })),
+  );
+  if (workDateConflicts.length) {
+    const conflictSummary = workDateConflicts.map((conflict) => {
+      const context = conflict.employer ? `${conflict.employer}: ` : '';
+      return conflict.reason === 'end_before_start'
+        ? `fact ${conflict.factVersionId} ${context}start ${conflict.start} is after end ${conflict.end}`
+        : `fact ${conflict.factVersionId} ${context}has inconsistent dates ${conflict.start}–${conflict.end} for the same role`;
+    }).join('; ');
+    throw new ApiError(
+      422,
+      'WORK_HISTORY_DATE_CONFLICT',
+      `Work history dates need clarification: ${conflictSummary}. Correct and verify these facts before generating interview preparation.`,
+      { conflicts: workDateConflicts },
+    );
+  }
   const factData = facts.map(({ fact_version_id, type, value }) => ({ factVersionId: fact_version_id, type, value }));
   if (JSON.stringify(factData).length > 16_000) throw apiErrors.invalidInput('Selected facts exceed the interview preparation limit');
 
@@ -178,6 +197,20 @@ export async function createInterviewPrep(
   }
   for (const gap of parsed.data.gapsToReview) {
     if (!description.includes(gap.postingEvidence)) throw new ApiError(502, 'AI_OUTPUT_UNGROUNDED', 'Interview gap cited text absent from the saved posting');
+  }
+  const answerClaims = [
+    parsed.data.openingSummary.text,
+    ...parsed.data.likelyQuestions.map((item) => item.answerOutline),
+    ...parsed.data.starStories.flatMap((story) => [story.situation, story.task, story.action, story.result]),
+  ].filter((value): value is string => Boolean(value));
+  const unsupported = unsupportedQuantities(answerClaims, facts.map((fact) => fact.value));
+  if (unsupported.length) {
+    throw new ApiError(
+      502,
+      'AI_OUTPUT_UNGROUNDED',
+      'Interview preparation contains a number, date, or duration that is not supported by the selected facts. Correct the facts or regenerate the preparation before using it.',
+      { unsupportedQuantities: unsupported },
+    );
   }
 
   return withTransaction(async (client) => {

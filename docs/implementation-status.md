@@ -20,7 +20,7 @@ Last updated: 2026-11-11.
 | Epic | Status | What exists |
 |---|---|---|
 | E00 Repository | Done | Strict TypeScript, ESLint flat config, Vitest, Next build, npm lockfile |
-| E01 Security | Done | Local provisioning CLI with singleton lock, scrypt password hashing, session cookies (HttpOnly/SameSite/Secure when HTTPS), CSRF + Origin checks, owner scoping, DB-backed login throttle, audit |
+| E01 Security | Done for local single-owner recovery | Local provisioning and password-reset CLIs, singleton lock, scrypt password hashing, session cookies (HttpOnly/SameSite/Secure when HTTPS), CSRF + Origin checks, owner scoping, DB-backed login throttle, audit; password reset revokes active sessions |
 | E02 Storage | Done | Versioned SQL migrations (full logical schema), private local storage with content-based validation, upload/download/delete, idempotency records, export ZIP with manifest, purge with privacy generation, workspace reset + recovery hold |
 | E03 Queue | Done | Claim with `FOR UPDATE SKIP LOCKED`, lease + fencing token, heartbeat, retry/backoff, graceful shutdown, expired-lease sweep with safe-kind allowlist, scheduler slot resolution incl. DST rules |
 
@@ -239,9 +239,10 @@ signed off by the owner.
 
 ## Known gaps / follow-ups
 
-- `tasks` and `outbox_events` still need owner-scoping review noted during
-  requirement study (worker always receives `owner_id`, but the tables do not
-  enforce it structurally beyond FK on `tasks`).
+- The task table requires an owner FK. Migration `0015` now also makes
+  `outbox_events.owner_id` required and indexed; legacy null-owner events are
+  scoped to the installation owner during upgrade. There is no outbox publisher
+  yet, so event delivery/retry behavior remains open.
 - AI budget ledger is not modelled; budget remains a future preference.
 - Current evaluations are conservative string/rule comparisons. They can miss
   synonyms and context, and are not equivalent to the planned AI evaluator.
@@ -269,7 +270,26 @@ signed off by the owner.
 - AI job review is a separate advisory draft, not part of the deterministic
   ranking score. It can be stale after profile or posting changes and never
   submits an application.
-- No owner password-recovery flow (CLI only), as specified for the pilot but
-  operationally incomplete.
+- Numeric/date checks are conservative safeguards, not full semantic entailment.
+  Unstructured work-history prose and claims without explicit numeric/date
+  signals can still need owner review. Regression tests and owner UAT for UAT-31
+  and UAT-51 have not been run for this update.
 - Cross-owner tests use a directly inserted second user; production provisioning
   still enforces single owner.
+
+## Follow-up implementation (2026-11-11)
+
+- Added `npm run reset-owner-password`, a local operator-only recovery flow.
+  It uses the hidden prompt or `AJSA_OWNER_PASSWORD`, hashes with the existing
+  scrypt scheme, revokes active sessions and records only safe metadata in audit.
+- Migration `0015_owner_scoped_outbox.sql` makes outbox ownership mandatory and
+  adds an owner/time index. Existing unowned events are assigned to the sole
+  provisioned owner; migration stops safely if such events exist before owner
+  provisioning.
+- Interview preparation now blocks clearly reversed or conflicting structured
+  work-history ranges before sending data to the AI provider. AI job review and
+  interview preparation reject numeric/duration claims not present in selected
+  verified facts. These checks do not replace owner review.
+- `npm run typecheck`, `npm run lint`, and `npm run build` are local
+  implementation checks for this update. Automated tests were not run;
+  UAT-31/UAT-51 regression coverage and owner sign-off remain open.
